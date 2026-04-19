@@ -410,7 +410,8 @@ def build_mcp_server(
             content: str,
             article_id: str | None = None,
         ) -> str:
-            """Save discussion notes, takeaways, or action items to disk.
+            """Save discussion notes, takeaways, or action items to the
+            user's Copilot Digest workspace.
 
             YOU MUST call this tool whenever the user asks to save,
             record, persist, or write down notes, takeaways, action
@@ -424,8 +425,8 @@ def build_mcp_server(
             - "persist these notes"
 
             Do NOT simply print the notes in chat — the user wants
-            them saved to a file on disk so they can reference them
-            later. Always call this tool to write the file.
+            them saved to their workspace so they can reference them
+            later. Always call this tool to persist the output.
 
             You must compose the ``content`` parameter yourself as
             well-formatted markdown that captures the key points from
