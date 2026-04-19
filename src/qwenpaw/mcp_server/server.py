@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=unused-argument
 """FastMCP server exposing Copilot Digest over streamable-HTTP.
 
 Tools are registered in two categories:
@@ -145,7 +146,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def list_reading_list_tool(
-            _ctx: Context,
+            ctx: Context,
             status: str = "unread",
             timeframe: str = "all",
             topic: str | None = None,
@@ -185,7 +186,7 @@ def build_mcp_server(
         list_reading_list_tool.__name__ = "list_reading_list"
 
         @mcp.tool()
-        async def get_article_tool(article_id: str, _ctx: Context) -> str:
+        async def get_article_tool(article_id: str, ctx: Context) -> str:
             """Retrieve the FULL TEXT of a specific article from the user's
             personal knowledge base.
 
@@ -218,7 +219,7 @@ def build_mcp_server(
         get_article_tool.__name__ = "get_article"
 
         @mcp.tool()
-        async def mark_read_tool(article_id: str, _ctx: Context) -> str:
+        async def mark_read_tool(article_id: str, ctx: Context) -> str:
             """Mark an article as read in the user's knowledge base.
 
             Call this after the user has reviewed an article or when they
@@ -233,7 +234,7 @@ def build_mcp_server(
         mark_read_tool.__name__ = "mark_read"
 
         @mcp.tool()
-        async def mark_unread_tool(article_id: str, _ctx: Context) -> str:
+        async def mark_unread_tool(article_id: str, ctx: Context) -> str:
             """Mark an article as unread in the user's knowledge base.
 
             Use when the user wants to mark a previously read article back
@@ -247,7 +248,7 @@ def build_mcp_server(
         mark_unread_tool.__name__ = "mark_unread"
 
         @mcp.tool()
-        async def get_stats_tool(_ctx: Context) -> str:
+        async def get_stats_tool(ctx: Context) -> str:
             """Show statistics about the user's knowledge base.
 
             Use when the user asks "how many articles do I have?",
@@ -261,7 +262,7 @@ def build_mcp_server(
         get_stats_tool.__name__ = "get_stats"
 
         @mcp.tool()
-        async def mark_discussed_tool(article_id: str, _ctx: Context) -> str:
+        async def mark_discussed_tool(article_id: str, ctx: Context) -> str:
             """Mark an article as discussed in the user's knowledge base.
 
             Call this after the user has had a discussion about an article.
@@ -279,7 +280,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def get_briefing_tool(
-            _ctx: Context,
+            ctx: Context,
             timeframe: str = "today",
             group_by: str = "topic",
             filter_topic: str | None = None,
@@ -320,7 +321,7 @@ def build_mcp_server(
         get_briefing_tool.__name__ = "get_briefing"
 
         @mcp.tool()
-        async def get_config_tool(_ctx: Context) -> str:
+        async def get_config_tool(ctx: Context) -> str:
             """Show the user's Copilot Digest configuration.
 
             Use when the user asks about their settings, tracked sources,
@@ -336,7 +337,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def update_config_tool(
-            _ctx: Context,
+            ctx: Context,
             add_topics: str | None = None,
             remove_topics: str | None = None,
             add_source_name: str | None = None,
@@ -399,7 +400,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def save_work_output_tool(
-            _ctx: Context,
+            ctx: Context,
             output_type: str,
             content: str,
             article_id: str | None = None,
@@ -433,7 +434,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def export_briefing_tool(
-            _ctx: Context,
+            ctx: Context,
             item_ids: str | None = None,
             include_all_work: bool = False,
             title: str | None = None,
