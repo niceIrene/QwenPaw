@@ -127,14 +127,14 @@ directly and respond in milliseconds.
 | Tool | What to say to Claude |
 |---|---|
 | `list_reading_list` | *"what's in my reading list?"*, *"show unread articles"*, *"what did I save this week?"* |
-| `get_article` | *"tell me about the Nvidia paper"*, *"show me article abc123"* |
+| `get_article` | *"tell me about the Nvidia paper"*, *"show me article abc123"* (returns the curated `_script.md` summary when available, otherwise the raw article) |
 | `get_stats` | *"how many articles do I have?"*, *"knowledge base stats"* |
 
 **Briefings**
 
 | Tool | What to say to Claude |
 |---|---|
-| `get_briefing` | *"what's new today?"*, *"this week's briefing"*, *"catch me up"*, *"unread items on fintech"* |
+| `get_briefing` | *"what's new today?"*, *"this week's briefing"*, *"weekly briefing"*, *"catch me up"*, *"unread items on fintech"* |
 | `export_briefing` | *"export today's briefing"*, *"compile my notes and articles"* |
 
 **Status tracking**
@@ -149,7 +149,7 @@ directly and respond in milliseconds.
 
 | Tool | What to say to Claude |
 |---|---|
-| `save_work_output` | *"save these notes"*, *"write up what we discussed"*, *"what are the takeaways?"*, *"what are the action items?"* |
+| `save_work_output` | *"save my notes"*, *"save my discussion notes"*, *"record the takeaways"*, *"write down the action items"* |
 
 **Configuration**
 
@@ -213,6 +213,5 @@ with the new value.
 
 ## Want more detail?
 
-- Full design + architecture: `docs/design/copilot_digest_mcp.md`
 - Copilot Digest skill behavior: `src/qwenpaw/agents/skills/copilot_digest/SKILL.md`
 - HTTP contract we proxy: `src/qwenpaw/app/routers/console.py`
