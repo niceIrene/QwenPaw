@@ -40,7 +40,7 @@ class ClientConfig:
     timeout: float
 
 
-async def send_message(
+async def send_message(  # pylint: disable=too-many-return-statements
     text: str,
     config: ClientConfig,
     session_id: str,
@@ -55,8 +55,10 @@ async def send_message(
             {"content": [{"type": "text", "text": text}]},
         ],
     }
-    url = f"{config.base_url.rstrip('/')}/api/agents/{config.agent_id}" \
+    url = (
+        f"{config.base_url.rstrip('/')}/api/agents/{config.agent_id}"
         "/console/chat"
+    )
 
     try:
         async with httpx.AsyncClient(timeout=config.timeout) as c:

@@ -6,7 +6,7 @@ Tools are registered in two categories:
 **Direct workspace tools** (fast, no assistant round-trip):
 * ``list_reading_list(status?, timeframe?, topic?, limit?)``
 * ``get_article(article_id)``
-* ``get_briefing(timeframe?, group_by?, filter_topic?, filter_status?, top_n?)``
+* ``get_briefing(timeframe?, group_by?, filter_topic?, ...)``
 * ``mark_read(article_id)``
 * ``mark_unread(article_id)``
 * ``mark_discussed(article_id)``
@@ -68,7 +68,9 @@ class _SessionRegistry:
         key = mcp_session_id or "__fallback__"
         session = self._by_mcp_session.get(key)
         if session is None:
-            session = self._fallback if key == "__fallback__" else uuid.uuid4().hex
+            session = (
+                self._fallback if key == "__fallback__" else uuid.uuid4().hex
+            )
             self._by_mcp_session[key] = session
         return session
 
@@ -143,7 +145,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def list_reading_list_tool(
-            ctx: Context,
+            _ctx: Context,
             status: str = "unread",
             timeframe: str = "all",
             topic: str | None = None,
@@ -173,14 +175,17 @@ def build_mcp_server(
             - limit: max items to return (default 50)
             """
             return ws_list_items(
-                ws_path, status=status, timeframe=timeframe,
-                topic=topic, limit=limit,
+                ws_path,
+                status=status,
+                timeframe=timeframe,
+                topic=topic,
+                limit=limit,
             )
 
         list_reading_list_tool.__name__ = "list_reading_list"
 
         @mcp.tool()
-        async def get_article_tool(article_id: str, ctx: Context) -> str:
+        async def get_article_tool(article_id: str, _ctx: Context) -> str:
             """Retrieve the FULL TEXT of a specific article from the user's
             personal knowledge base.
 
@@ -213,7 +218,7 @@ def build_mcp_server(
         get_article_tool.__name__ = "get_article"
 
         @mcp.tool()
-        async def mark_read_tool(article_id: str, ctx: Context) -> str:
+        async def mark_read_tool(article_id: str, _ctx: Context) -> str:
             """Mark an article as read in the user's knowledge base.
 
             Call this after the user has reviewed an article or when they
@@ -228,7 +233,7 @@ def build_mcp_server(
         mark_read_tool.__name__ = "mark_read"
 
         @mcp.tool()
-        async def mark_unread_tool(article_id: str, ctx: Context) -> str:
+        async def mark_unread_tool(article_id: str, _ctx: Context) -> str:
             """Mark an article as unread in the user's knowledge base.
 
             Use when the user wants to mark a previously read article back
@@ -242,7 +247,7 @@ def build_mcp_server(
         mark_unread_tool.__name__ = "mark_unread"
 
         @mcp.tool()
-        async def get_stats_tool(ctx: Context) -> str:
+        async def get_stats_tool(_ctx: Context) -> str:
             """Show statistics about the user's knowledge base.
 
             Use when the user asks "how many articles do I have?",
@@ -256,7 +261,7 @@ def build_mcp_server(
         get_stats_tool.__name__ = "get_stats"
 
         @mcp.tool()
-        async def mark_discussed_tool(article_id: str, ctx: Context) -> str:
+        async def mark_discussed_tool(article_id: str, _ctx: Context) -> str:
             """Mark an article as discussed in the user's knowledge base.
 
             Call this after the user has had a discussion about an article.
@@ -274,7 +279,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def get_briefing_tool(
-            ctx: Context,
+            _ctx: Context,
             timeframe: str = "today",
             group_by: str = "topic",
             filter_topic: str | None = None,
@@ -315,7 +320,7 @@ def build_mcp_server(
         get_briefing_tool.__name__ = "get_briefing"
 
         @mcp.tool()
-        async def get_config_tool(ctx: Context) -> str:
+        async def get_config_tool(_ctx: Context) -> str:
             """Show the user's Copilot Digest configuration.
 
             Use when the user asks about their settings, tracked sources,
@@ -331,7 +336,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def update_config_tool(
-            ctx: Context,
+            _ctx: Context,
             add_topics: str | None = None,
             remove_topics: str | None = None,
             add_source_name: str | None = None,
@@ -350,7 +355,8 @@ def build_mcp_server(
             - "Set briefing detail to detailed"
 
             Parameters:
-            - add_topics: comma-separated topics to add (e.g. "AI policy, quantum computing")
+            - add_topics: comma-separated topics to add
+              (e.g. "AI policy, quantum computing")
             - remove_topics: comma-separated topics to remove
             - add_source_name: name of a new source to add
             - add_source_url: URL of the new source (use with add_source_name)
@@ -358,10 +364,26 @@ def build_mcp_server(
             - set_summary_length: "brief", "standard", or "detailed"
             - set_fetch_cron: cron expression for auto-fetch schedule
             """
-            add_t = [t.strip() for t in add_topics.split(",") if t.strip()] if add_topics else None
-            rem_t = [t.strip() for t in remove_topics.split(",") if t.strip()] if remove_topics else None
-            add_s = [{"name": add_source_name, "url": add_source_url or ""}] if add_source_name else None
-            rem_s = [s.strip() for s in remove_sources.split(",") if s.strip()] if remove_sources else None
+            add_t = (
+                [t.strip() for t in add_topics.split(",") if t.strip()]
+                if add_topics
+                else None
+            )
+            rem_t = (
+                [t.strip() for t in remove_topics.split(",") if t.strip()]
+                if remove_topics
+                else None
+            )
+            add_s = (
+                [{"name": add_source_name, "url": add_source_url or ""}]
+                if add_source_name
+                else None
+            )
+            rem_s = (
+                [s.strip() for s in remove_sources.split(",") if s.strip()]
+                if remove_sources
+                else None
+            )
 
             return ws_update_config(
                 ws_path,
@@ -377,7 +399,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def save_work_output_tool(
-            ctx: Context,
+            _ctx: Context,
             output_type: str,
             content: str,
             article_id: str | None = None,
@@ -411,7 +433,7 @@ def build_mcp_server(
 
         @mcp.tool()
         async def export_briefing_tool(
-            ctx: Context,
+            _ctx: Context,
             item_ids: str | None = None,
             include_all_work: bool = False,
             title: str | None = None,
@@ -435,7 +457,11 @@ def build_mcp_server(
             - include_all_work: include ALL work files, not just today's
             - title: custom document title
             """
-            ids = [i.strip() for i in item_ids.split(",") if i.strip()] if item_ids else None
+            ids = (
+                [i.strip() for i in item_ids.split(",") if i.strip()]
+                if item_ids
+                else None
+            )
 
             return ws_export_briefing(
                 ws_path,
@@ -486,7 +512,10 @@ def build_mcp_server(
 
         await ctx.info("Forwarding to Copilot Digest assistant...")
         return await send_message(
-            text, client_config, session_id, progress_cb=_progress,
+            text,
+            client_config,
+            session_id,
+            progress_cb=_progress,
         )
 
     send_message_tool.__name__ = "send_message"
@@ -523,7 +552,9 @@ def build_mcp_server(
 
         await ctx.info(f"Ingesting URL: {url}")
         return await send_message(
-            "\n".join(prompt_lines), client_config, session_id,
+            "\n".join(prompt_lines),
+            client_config,
+            session_id,
             progress_cb=_progress,
         )
 

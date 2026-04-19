@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Index I/O
 # ---------------------------------------------------------------------------
 
+
 def load_index(workspace_dir: Path) -> dict[str, Any]:
     """Read ``index.json`` and return the full index dict."""
     index_path = workspace_dir / "index.json"
@@ -60,6 +61,7 @@ def _save_index(workspace_dir: Path, index: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # list_items
 # ---------------------------------------------------------------------------
+
 
 def list_items(
     workspace_dir: Path,
@@ -105,21 +107,20 @@ def list_items(
     elif timeframe == "week":
         week_ago = now - timedelta(days=7)
         items = [
-            i for i in items
-            if _parse_iso(i.get("saved_at", "")) >= week_ago
+            i for i in items if _parse_iso(i.get("saved_at", "")) >= week_ago
         ]
     elif timeframe == "month":
         month_ago = now - timedelta(days=30)
         items = [
-            i for i in items
-            if _parse_iso(i.get("saved_at", "")) >= month_ago
+            i for i in items if _parse_iso(i.get("saved_at", "")) >= month_ago
         ]
 
     # --- topic filter ---
     if topic:
         topic_lower = topic.lower()
         items = [
-            i for i in items
+            i
+            for i in items
             if any(topic_lower in t.lower() for t in i.get("topics", []))
         ]
 
@@ -148,7 +149,7 @@ def list_items(
             f"\n[{item_id}] {title}\n"
             f"  Saved: {saved} | Type: {source} | Status: {read_flag}\n"
             f"  Topics: {topics_str}\n"
-            f"  Summary: {summary}"
+            f"  Summary: {summary}",
         )
 
     return "\n".join(lines)
@@ -157,6 +158,7 @@ def list_items(
 # ---------------------------------------------------------------------------
 # get_article
 # ---------------------------------------------------------------------------
+
 
 def get_article(workspace_dir: Path, article_id: str) -> str:
     """Return the curated summary script of an article.
@@ -215,7 +217,8 @@ def get_article(workspace_dir: Path, article_id: str) -> str:
 
 
 def _find_article(
-    items: list[dict[str, Any]], query: str,
+    items: list[dict[str, Any]],
+    query: str,
 ) -> dict[str, Any] | None:
     """Find an article by ID or title with decreasing specificity.
 
@@ -252,7 +255,8 @@ def _find_article(
     keywords = query_lower.split()
     if keywords:
         candidates = [
-            i for i in items
+            i
+            for i in items
             if all(kw in i.get("title", "").lower() for kw in keywords)
         ]
         if len(candidates) == 1:
@@ -264,7 +268,8 @@ def _find_article(
 def _to_script_path(article_path: Path) -> Path | None:
     """Derive the ``_script.md`` path from an article path.
 
-    ``articles/2026-04-16_a1b2c3d4.md`` → ``articles/2026-04-16_a1b2c3d4_script.md``
+    ``articles/2026-04-16_a1b2c3d4.md``
+    → ``articles/2026-04-16_a1b2c3d4_script.md``
     """
     if article_path.suffix != ".md":
         return None
@@ -274,6 +279,7 @@ def _to_script_path(article_path: Path) -> Path | None:
 # ---------------------------------------------------------------------------
 # mark_read
 # ---------------------------------------------------------------------------
+
 
 def mark_read(workspace_dir: Path, article_id: str) -> str:
     """Mark an item as read. Returns confirmation or error string."""
@@ -292,18 +298,21 @@ def _set_read_flag(workspace_dir: Path, article_id: str, *, read: bool) -> str:
         if item.get("id") == article_id:
             item["read"] = read
             _save_index(workspace_dir, index)
-            return json.dumps({
-                "status": "updated",
-                "id": article_id,
-                "title": item.get("title", ""),
-                "read": read,
-            })
+            return json.dumps(
+                {
+                    "status": "updated",
+                    "id": article_id,
+                    "title": item.get("title", ""),
+                    "read": read,
+                },
+            )
     return f"Item '{article_id}' not found in the index."
 
 
 # ---------------------------------------------------------------------------
 # get_stats
 # ---------------------------------------------------------------------------
+
 
 def get_stats(workspace_dir: Path) -> str:
     """Return knowledge-base statistics as a formatted string."""
@@ -326,9 +335,7 @@ def get_stats(workspace_dir: Path) -> str:
         1 for i in items if _parse_iso(i.get("saved_at", "")) >= week_ago
     )
 
-    topic_counts = Counter(
-        t for i in items for t in i.get("topics", [])
-    )
+    topic_counts = Counter(t for i in items for t in i.get("topics", []))
     top_topics = topic_counts.most_common(5)
 
     type_counts = Counter(i.get("source_type", "unknown") for i in items)
@@ -362,6 +369,7 @@ def get_stats(workspace_dir: Path) -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_iso(iso_str: str) -> datetime:
     """Parse an ISO 8601 timestamp, falling back to epoch on failure."""
     if not iso_str:
@@ -376,6 +384,7 @@ def _parse_iso(iso_str: str) -> datetime:
 # mark_discussed
 # ---------------------------------------------------------------------------
 
+
 def mark_discussed(workspace_dir: Path, article_id: str) -> str:
     """Mark an item as discussed (also sets read=True). Returns JSON."""
     index = load_index(workspace_dir)
@@ -384,13 +393,15 @@ def mark_discussed(workspace_dir: Path, article_id: str) -> str:
             item["discussed"] = True
             item["read"] = True
             _save_index(workspace_dir, index)
-            return json.dumps({
-                "status": "updated",
-                "id": article_id,
-                "title": item.get("title", ""),
-                "discussed": True,
-                "read": True,
-            })
+            return json.dumps(
+                {
+                    "status": "updated",
+                    "id": article_id,
+                    "title": item.get("title", ""),
+                    "discussed": True,
+                    "read": True,
+                },
+            )
     return f"Item '{article_id}' not found in the index."
 
 
@@ -404,13 +415,31 @@ _RELEVANCE_W = 0.4
 _AUTHORITY_W = 0.2
 
 _AUTHORITATIVE_DOMAINS = {
-    "reuters.com", "bloomberg.com", "ft.com", "wsj.com", "nytimes.com",
-    "sec.gov", "federalreserve.gov", "fda.gov", "nih.gov",
-    "nature.com", "science.org", "nejm.org", "lancet.com",
-    "techcrunch.com", "wired.com", "arstechnica.com",
-    "apnews.com", "bbc.com", "cnn.com", "theguardian.com",
-    "politico.com", "thehill.com", "law360.com",
-    "scotusblog.com", "statnews.com",
+    "reuters.com",
+    "bloomberg.com",
+    "ft.com",
+    "wsj.com",
+    "nytimes.com",
+    "sec.gov",
+    "federalreserve.gov",
+    "fda.gov",
+    "nih.gov",
+    "nature.com",
+    "science.org",
+    "nejm.org",
+    "lancet.com",
+    "techcrunch.com",
+    "wired.com",
+    "arstechnica.com",
+    "apnews.com",
+    "bbc.com",
+    "cnn.com",
+    "theguardian.com",
+    "politico.com",
+    "thehill.com",
+    "law360.com",
+    "scotusblog.com",
+    "statnews.com",
 }
 
 
@@ -452,7 +481,11 @@ def _score_item(item: dict, config: dict, now: datetime) -> dict:
     domain = _extract_domain(item.get("source_url", ""))
     authority = 1.0 if domain in _AUTHORITATIVE_DOMAINS else 0.5
 
-    score = _RECENCY_W * recency + _RELEVANCE_W * relevance + _AUTHORITY_W * authority
+    score = (
+        _RECENCY_W * recency
+        + _RELEVANCE_W * relevance
+        + _AUTHORITY_W * authority
+    )
     return {
         "score": round(score, 4),
         "recency": round(recency, 4),
@@ -461,7 +494,7 @@ def _score_item(item: dict, config: dict, now: datetime) -> dict:
     }
 
 
-def get_briefing(
+def get_briefing(  # pylint: disable=too-many-branches,too-many-statements
     workspace_dir: Path,
     *,
     timeframe: str = "all",
@@ -497,17 +530,29 @@ def get_briefing(
     # --- Timeframe filter ---
     if timeframe == "today":
         cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        items = [i for i in items if _parse_iso(i.get("saved_at", "")) >= cutoff]
+        items = [
+            i for i in items if _parse_iso(i.get("saved_at", "")) >= cutoff
+        ]
     elif timeframe == "yesterday":
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_start = today_start - timedelta(days=1)
-        items = [i for i in items if yesterday_start <= _parse_iso(i.get("saved_at", "")) < today_start]
+        items = [
+            i
+            for i in items
+            if yesterday_start
+            <= _parse_iso(i.get("saved_at", ""))
+            < today_start
+        ]
     elif timeframe == "week":
         cutoff = now - timedelta(days=7)
-        items = [i for i in items if _parse_iso(i.get("saved_at", "")) >= cutoff]
+        items = [
+            i for i in items if _parse_iso(i.get("saved_at", "")) >= cutoff
+        ]
     elif timeframe == "month":
         cutoff = now - timedelta(days=30)
-        items = [i for i in items if _parse_iso(i.get("saved_at", "")) >= cutoff]
+        items = [
+            i for i in items if _parse_iso(i.get("saved_at", "")) >= cutoff
+        ]
 
     # --- Status filter ---
     if filter_status == "unread":
@@ -521,13 +566,16 @@ def get_briefing(
     if filter_topic:
         tl = filter_topic.lower()
         items = [
-            i for i in items
+            i
+            for i in items
             if any(tl in t.lower() for t in i.get("topics", []))
             or tl in i.get("title", "").lower()
         ]
 
     if not items:
-        return f"No items match (timeframe={timeframe}, status={filter_status})."
+        return (
+            f"No items match (timeframe={timeframe}, status={filter_status})."
+        )
 
     # --- Score and sort ---
     scored = []
@@ -552,7 +600,11 @@ def get_briefing(
             topic_groups[primary].append(item)
         groups = [
             {"topic": t, "items": g}
-            for t, g in sorted(topic_groups.items(), key=lambda x: x[1][0]["score_breakdown"]["score"], reverse=True)
+            for t, g in sorted(
+                topic_groups.items(),
+                key=lambda x: x[1][0]["score_breakdown"]["score"],
+                reverse=True,
+            )
         ]
     elif group_by == "date":
         today_str = now.strftime("%Y-%m-%d")
@@ -568,7 +620,9 @@ def get_briefing(
                 label = "Yesterday"
             else:
                 try:
-                    label = datetime.strptime(d, "%Y-%m-%d").strftime("%A, %b %d")
+                    label = datetime.strptime(d, "%Y-%m-%d").strftime(
+                        "%A, %b %d",
+                    )
                 except ValueError:
                     label = d
             groups.append({"date": d, "label": label, "items": date_groups[d]})
@@ -584,7 +638,10 @@ def _format_briefing(
     timeframe: str,
     now: datetime,
 ) -> str:
-    lines = [f"# Briefing — {timeframe.title()} ({now.strftime('%B %d, %Y')})", ""]
+    lines = [
+        f"# Briefing — {timeframe.title()} ({now.strftime('%B %d, %Y')})",
+        "",
+    ]
 
     if not ranked:
         lines.append("No items found for the selected criteria.")
@@ -600,26 +657,38 @@ def _format_briefing(
             tags.append("[discussed]")
         if item.get("auto_fetched", False):
             tags.append("[auto-fetched]")
-        domain = _extract_domain(item.get("source_url", "")) or item.get("source_type", "")
+        domain = _extract_domain(item.get("source_url", "")) or item.get(
+            "source_type",
+            "",
+        )
         summary = item.get("summary", "")
         out = [
             f"**{rank}. {item.get('title', '(untitled)')}**",
-            f"   ID: {item.get('id', '?')} | Source: {domain} | Relevance: {pct}% {' '.join(tags)}",
+            f"   ID: {item.get('id', '?')} | Source: {domain}"
+            f" | Relevance: {pct}% {' '.join(tags)}",
         ]
         if summary:
-            out.append(f"   {summary[:200]}{'...' if len(summary) > 200 else ''}")
+            out.append(
+                f"   {summary[:200]}{'...' if len(summary) > 200 else ''}",
+            )
         out.append("")
         return out
 
     if group_by == "topic" and groups:
         for g in groups:
-            lines.append(f"## {g['topic']} ({len(g['items'])} item{'s' if len(g['items']) != 1 else ''})")
+            lines.append(
+                f"## {g['topic']} ({len(g['items'])} item"
+                f"{'s' if len(g['items']) != 1 else ''})",
+            )
             lines.append("")
             for item in g["items"]:
                 lines.extend(_fmt_item(item))
     elif group_by == "date" and groups:
         for g in groups:
-            lines.append(f"## {g['label']} ({len(g['items'])} item{'s' if len(g['items']) != 1 else ''})")
+            lines.append(
+                f"## {g['label']} ({len(g['items'])} item"
+                f"{'s' if len(g['items']) != 1 else ''})",
+            )
             lines.append("")
             for item in g["items"]:
                 lines.extend(_fmt_item(item))
@@ -631,7 +700,10 @@ def _format_briefing(
     unread = sum(1 for i in ranked if not i.get("read", False))
     discussed = sum(1 for i in ranked if i.get("discussed", False))
     lines.append("---")
-    lines.append(f"**Total:** {total} items | **Unread:** {unread} | **Discussed:** {discussed}")
+    lines.append(
+        f"**Total:** {total} items | **Unread:** {unread}"
+        f" | **Discussed:** {discussed}",
+    )
 
     topic_counts: dict[str, int] = defaultdict(int)
     for item in ranked:
@@ -639,7 +711,9 @@ def _format_briefing(
             topic_counts[t] += 1
     top = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     if top:
-        lines.append(f"**Top topics:** {', '.join(f'{t} ({c})' for t, c in top)}")
+        lines.append(
+            f"**Top topics:** {', '.join(f'{t} ({c})' for t, c in top)}",
+        )
 
     return "\n".join(lines)
 
@@ -647,6 +721,7 @@ def _format_briefing(
 # ---------------------------------------------------------------------------
 # Config management
 # ---------------------------------------------------------------------------
+
 
 def _load_config(workspace_dir: Path) -> dict[str, Any]:
     config_path = workspace_dir / "config.json"
@@ -673,7 +748,9 @@ def _save_config(workspace_dir: Path, config: dict[str, Any]) -> None:
         raise
 
 
-def get_config(workspace_dir: Path) -> str:
+def get_config(  # pylint: disable=too-many-branches
+    workspace_dir: Path,
+) -> str:
     """Return the user's config as formatted text."""
     config = _load_config(workspace_dir)
     if not config:
@@ -687,7 +764,9 @@ def get_config(workspace_dir: Path) -> str:
         if profile.get("major_field"):
             lines.append(f"- **Field:** {profile['major_field']}")
         if profile.get("sub_fields"):
-            lines.append(f"- **Sub-fields:** {', '.join(profile['sub_fields'])}")
+            lines.append(
+                f"- **Sub-fields:** {', '.join(profile['sub_fields'])}",
+            )
         if profile.get("topics"):
             lines.append(f"- **Topics:** {', '.join(profile['topics'])}")
         if profile.get("role_title"):
@@ -699,7 +778,9 @@ def get_config(workspace_dir: Path) -> str:
         lines.append("## Sources")
         for s in sources:
             status = "enabled" if s.get("enabled", True) else "disabled"
-            lines.append(f"- {s.get('name', '?')} ({s.get('url', '')}) [{status}]")
+            lines.append(
+                f"- {s.get('name', '?')} ({s.get('url', '')}) [{status}]",
+            )
         lines.append("")
 
     schedule = config.get("schedule", {})
@@ -707,8 +788,11 @@ def get_config(workspace_dir: Path) -> str:
         lines.append("## Schedule")
         if schedule.get("fetch_cron"):
             lines.append(f"- **Fetch cron:** {schedule['fetch_cron']}")
-        if schedule.get("max_items_per_fetch"):
-            lines.append(f"- **Max items per fetch:** {schedule['max_items_per_fetch']}")
+        max_fetch = schedule.get("max_items_per_fetch")
+        if max_fetch:
+            lines.append(
+                f"- **Max items per fetch:** {max_fetch}",
+            )
         lines.append("")
 
     prefs = config.get("preferences", {})
@@ -720,7 +804,7 @@ def get_config(workspace_dir: Path) -> str:
     return "\n".join(lines)
 
 
-def update_config(
+def update_config(  # pylint: disable=too-many-branches
     workspace_dir: Path,
     *,
     add_topics: list[str] | None = None,
@@ -734,7 +818,12 @@ def update_config(
     """Update config.json with the given changes. Returns summary."""
     config = _load_config(workspace_dir)
     if not config:
-        config = {"profile": {"topics": [], "sub_fields": []}, "sources": [], "preferences": {}, "schedule": {}}
+        config = {
+            "profile": {"topics": [], "sub_fields": []},
+            "sources": [],
+            "preferences": {},
+            "schedule": {},
+        }
 
     changes: list[str] = []
     profile = config.setdefault("profile", {})
@@ -762,19 +851,33 @@ def update_config(
         existing_names = {s.get("name", "").lower() for s in sources}
         for src in add_sources:
             if src.get("name", "").lower() not in existing_names:
-                sources.append({"name": src["name"], "url": src.get("url", ""), "enabled": True})
+                sources.append(
+                    {
+                        "name": src["name"],
+                        "url": src.get("url", ""),
+                        "enabled": True,
+                    },
+                )
                 changes.append(f"Added source: {src['name']}")
 
     if remove_sources:
         sources = config.get("sources", [])
         remove_lower = {n.lower() for n in remove_sources}
-        removed = [s["name"] for s in sources if s.get("name", "").lower() in remove_lower]
-        config["sources"] = [s for s in sources if s.get("name", "").lower() not in remove_lower]
+        removed = [
+            s["name"]
+            for s in sources
+            if s.get("name", "").lower() in remove_lower
+        ]
+        config["sources"] = [
+            s for s in sources if s.get("name", "").lower() not in remove_lower
+        ]
         if removed:
             changes.append(f"Removed sources: {', '.join(removed)}")
 
     if set_summary_length:
-        config.setdefault("preferences", {})["summary_length"] = set_summary_length
+        config.setdefault("preferences", {})[
+            "summary_length"
+        ] = set_summary_length
         changes.append(f"Set summary length: {set_summary_length}")
 
     if set_fetch_cron:
@@ -791,6 +894,7 @@ def update_config(
 # ---------------------------------------------------------------------------
 # save_work_output
 # ---------------------------------------------------------------------------
+
 
 def save_work_output(
     workspace_dir: Path,
@@ -835,19 +939,24 @@ def save_work_output(
     out_path.write_text(content, encoding="utf-8")
     rel_path = f"work/{base_name}"
 
-    return json.dumps({
-        "status": "saved",
-        "file": rel_path,
-        "output_type": output_type,
-        "article_id": article_id,
-        "date": date_str,
-    })
+    return json.dumps(
+        {
+            "status": "saved",
+            "file": rel_path,
+            "output_type": output_type,
+            "article_id": article_id,
+            "date": date_str,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
 # export_briefing
 # ---------------------------------------------------------------------------
 
+
+# pylint: disable=too-many-branches,too-many-statements
+# pylint: disable=too-many-nested-blocks
 def export_briefing(
     workspace_dir: Path,
     *,
@@ -873,7 +982,8 @@ def export_briefing(
     else:
         today = now.strftime("%Y-%m-%d")
         selected = [
-            i for i in items
+            i
+            for i in items
             if i.get("saved_at", "")[:10] == today
             and (i.get("read") or i.get("discussed"))
         ]
@@ -886,12 +996,16 @@ def export_briefing(
         for f in sorted(work_dir.iterdir()):
             if f.is_file() and f.suffix == ".md":
                 if include_all_work or today_prefix in f.name:
-                    work_entries.append((f.name, f.read_text(encoding="utf-8")))
+                    work_entries.append(
+                        (f.name, f.read_text(encoding="utf-8")),
+                    )
 
     # Build document
     sections: list[str] = [
-        f"# {doc_title}", "",
-        f"*Generated: {now.strftime('%Y-%m-%d %H:%M UTC')}*", "",
+        f"# {doc_title}",
+        "",
+        f"*Generated: {now.strftime('%Y-%m-%d %H:%M UTC')}*",
+        "",
     ]
 
     if selected:
@@ -916,11 +1030,18 @@ def export_briefing(
             cp = item.get("content_path", "")
             if cp:
                 script = _to_script_path(workspace_dir / cp)
-                for p in ([script, workspace_dir / cp] if script else [workspace_dir / cp]):
+                for p in (
+                    [script, workspace_dir / cp]
+                    if script
+                    else [workspace_dir / cp]
+                ):
                     if p and p.exists():
                         body = p.read_text(encoding="utf-8")
                         if len(body) > 3000:
-                            body = body[:3000] + "\n\n*(content truncated for export)*"
+                            body = (
+                                body[:3000]
+                                + "\n\n*(content truncated for export)*"
+                            )
                         sections.append(body)
                         sections.append("")
                         break
@@ -962,7 +1083,4 @@ def export_briefing(
     content_str = "\n".join(sections)
     export_file.write_text(content_str, encoding="utf-8")
 
-    return (
-        f"Export saved to: {export_file}\n\n"
-        f"---\n\n{content_str}"
-    )
+    return f"Export saved to: {export_file}\n\n" f"---\n\n{content_str}"

@@ -79,10 +79,13 @@ def cli() -> None:
     "--workspace",
     default=None,
     type=click.Path(exists=True, file_okay=False, resolve_path=True),
-    help="Copilot Digest workspace directory (contains index.json, articles/). "
-    "Enables fast direct-read tools: list_reading_list, get_article, "
-    "mark_read, get_stats. Without this flag only assistant-proxied tools "
-    "are available.",
+    help=(
+        "Copilot Digest workspace directory "
+        "(contains index.json, articles/). "
+        "Enables fast direct-read tools: list_reading_list, "
+        "get_article, mark_read, get_stats. Without this flag "
+        "only assistant-proxied tools are available."
+    ),
 )
 @click.option(
     "--token-file",
@@ -174,7 +177,9 @@ def serve(
         ) from exc
 
     if no_auth:
-        logger.warning("Authentication DISABLED — any client can call this server.")
+        logger.warning(
+            "Authentication DISABLED — any client can call this server.",
+        )
         app = asgi_app
     else:
         token_path = Path(token_file).expanduser()

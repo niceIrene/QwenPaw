@@ -72,7 +72,8 @@ class BearerAuthMiddleware:
             await self._app(scope, receive, send)
             return
 
-        headers = dict(scope.get("headers") or [])
+        raw_headers = scope.get("headers") or []
+        headers = dict(raw_headers)  # type: ignore[call-overload]
         auth = headers.get(b"authorization", b"")
         if not self._is_valid_bearer(auth):
             await self._reject(send)
@@ -83,7 +84,7 @@ class BearerAuthMiddleware:
     def _is_valid_bearer(self, raw: bytes) -> bool:
         if not raw.startswith(b"Bearer "):
             return False
-        provided = raw[len(b"Bearer "):].strip()
+        provided = raw[len(b"Bearer ") :].strip()
         return hmac.compare_digest(provided, self._token_bytes)
 
     @staticmethod
