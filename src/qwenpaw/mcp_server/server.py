@@ -308,20 +308,26 @@ def build_mcp_server(
             simple filtered listings.
 
             Parameters:
-            - timeframe: "today" (default), "yesterday", "week", "month", "all"
+            - timeframe: "today" (default), "yesterday", "week"
+              (also accepts "weekly"), "month", or "all"
             - group_by: "topic" (default), "date", or "none"
-            - filter_topic: filter to items matching this topic (optional)
-            - filter_status: "all" (default), "unread", "read", "discussed"
+            - filter_topic: filter to items matching this topic
+            - filter_status: "all" (default), "unread", "read",
+              "discussed"
             - top_n: limit to top N items, 0 for all (default 0)
             """
-            return ws_get_briefing(
-                ws_path,
-                timeframe=timeframe,
-                group_by=group_by,
-                filter_topic=filter_topic,
-                filter_status=filter_status,
-                top_n=top_n,
-            )
+            try:
+                return ws_get_briefing(
+                    ws_path,
+                    timeframe=timeframe,
+                    group_by=group_by,
+                    filter_topic=filter_topic,
+                    filter_status=filter_status,
+                    top_n=top_n,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("get_briefing failed")
+                return f"Error generating briefing: {exc}"
 
         get_briefing_tool.__name__ = "get_briefing"
 

@@ -527,6 +527,18 @@ def get_briefing(  # pylint: disable=too-many-branches,too-many-statements
 
     now = datetime.now(timezone.utc)
 
+    # --- Normalise common aliases --------------------------------
+    _tf_aliases: dict[str, str] = {
+        "weekly": "week",
+        "this week": "week",
+        "this_week": "week",
+        "monthly": "month",
+        "this month": "month",
+        "this_month": "month",
+        "daily": "today",
+    }
+    timeframe = _tf_aliases.get(timeframe.lower(), timeframe)
+
     # --- Timeframe filter ---
     if timeframe == "today":
         cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
