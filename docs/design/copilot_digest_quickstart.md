@@ -447,5 +447,3 @@ You:   "Switch to detailed briefings"
 **Auto-fetch not working**
 → Check if the cron job exists: `qwenpaw cron list --agent-id <your_agent_id>`
 
-**Voice briefing not working**
-→ The voice channel (Twilio) must be configured separately. See QwenPaw voice channel docs.

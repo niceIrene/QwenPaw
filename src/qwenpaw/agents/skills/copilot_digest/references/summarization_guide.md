@@ -2,7 +2,7 @@
 
 Rules for generating the podcast-style summary script during content ingestion.
 
-**This step is mandatory for every ingested item.** The summary is what gets shown in briefings, spoken aloud in voice mode, and included in exports. Without it, the item is effectively invisible.
+**This step is mandatory for every ingested item.** The summary is what gets shown in briefings and included in exports. Without it, the item is effectively invisible.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: copilot_digest
-description: "Hands-free copilot that collects and organizes content (PDFs, CSVs, web URLs, news), delivers interactive briefings via chat or voice, discusses topics, and helps with simple tasks like drafting summaries, organizing notes, and writing action items."
+description: "Helps researchers and professionals digest papers, articles, news, and blogs they don't have time to read. Collects, organizes, ranks, and summarizes content into a personal knowledge base, then delivers briefings and interactive discussions via chat."
 metadata:
   builtin_skill_version: "1.0"
   qwenpaw:
@@ -12,7 +12,7 @@ metadata:
 
 # Copilot Digest
 
-A personal content copilot for professionals. Collects, organizes, ranks, summarizes, and discusses content — via chat or voice — and helps get simple work done hands-free.
+A personal knowledge copilot for researchers and professionals. Ingests papers, articles, news, and blogs you don't have time to read — organizes, ranks, and summarizes them into a searchable knowledge base — then delivers briefings and interactive discussions via chat to help you stay on top of your field.
 
 ---
 
@@ -20,15 +20,28 @@ A personal content copilot for professionals. Collects, organizes, ranks, summar
 
 Use this skill when the user:
 
-- **Sends a file** (PDF, CSV, text) and wants it saved or summarized
+- **Sends a file** (PDF, DOCX, text) and wants it saved or summarized
 - **Shares a URL** and asks to save, read, or track it
 - **Asks for a briefing**: "what's new", "catch me up", "reading list", "briefing"
-- **Wants to discuss** a previously saved article or topic
-- **Requests work**: "draft a summary", "organize my notes", "action items", "write up", "case brief"
+- **Wants to discuss or look up** a saved article or topic: "tell me about X", "what do I have on X", "discuss #3"
+- **Wants to capture discussion output**: "save these notes", "action items from this paper", "write up what we discussed", "export today's briefing"
 - **Configures interests**: "add fintech to my topics", "change my sources", "update my schedule"
-- **Calls via voice** and expects a spoken briefing or discussion
 
 Do NOT activate for general questions unrelated to the user's reading list, saved content, or configured interests.
+
+---
+
+## 1b. Communication Style — Audio-First Output
+
+All responses MUST be suitable for audio playback (text-to-speech). Follow these rules in every message:
+
+- **No emojis.** Never use emoji characters anywhere in output.
+- **No tables.** Never use markdown tables. Present tabular information as natural-language sentences or short lists instead.
+- **No ASCII art, box-drawing characters, or decorative lines** (no `━`, `─`, `═`, etc.).
+- **Write in full, speakable sentences.** Avoid shorthand, symbols-as-words (e.g. write "and" not "&"), or dense formatting that sounds awkward when read aloud.
+- **Use numbered or bulleted lists sparingly.** When listing items, prefer a conversational flow: "First, ... Second, ... Finally, ..."
+- **Spell out abbreviations on first use** ("Securities and Exchange Commission, or SEC").
+- **Avoid parenthetical asides that break sentence flow.** Rewrite as separate sentences instead.
 
 ---
 
@@ -84,11 +97,11 @@ cd {skill_dir} && python scripts/ingest.py commit \
 
 The commit will **fail** if the summary file is missing or under 50 words.
 
-### 3.1 Chat Attachment (PDF, CSV, Text Files)
+### 3.1 Chat Attachment (PDF, DOCX, Text Files)
 
 1. `ingest.py prepare --file <path> ...`
 2. Read article, write summary to `summary_path_abs`
-3. `ingest.py commit --source-type <pdf|csv|text> --source-file ... ...`
+3. `ingest.py commit --source-type <pdf|docx|text> --source-file ... ...`
 4. Confirm to user
 
 ### 3.2 URL (Paste or Message)
@@ -100,7 +113,7 @@ The commit will **fail** if the summary file is missing or under 50 words.
 
 For **multiple URLs** in one message, process each sequentially.
 
-### 3.3 Inbox Drop Folder
+### 3.3 Inbox Drop Folder (Cron)
 
 Scan `inbox/` (excluding `processed/`). For each file, run Steps 1-3 from 3.1.
 
@@ -111,9 +124,7 @@ See Section 5. For each matching article found, run Steps 1-3 from 3.2 with `--a
 ### After Ingestion — Confirm to User
 
 ```
-Saved: "<title>"
-  → <topics> | Relevance: <score>%
-  → <word_count> words | Added to today's reading list
+Saved "<title>". Topics: <topics>. Relevance: <score> percent. <word_count> words. Added to today's reading list.
 ```
 
 ---
@@ -169,7 +180,7 @@ qwenpaw cron create \
   --channel <user_channel> \
   --target-user <user_id> \
   --target-session <session_id> \
-  --text "Check inbox/ for new files. For each new PDF, CSV, or text file: run the ingest pipeline: (1) ingest.py prepare --file <path>, (2) read article and write summary to summary_path_abs, (3) ingest.py commit. Files are archived to inbox/processed/ automatically by prepare."
+  --text "Check inbox/ for new files. For each new PDF, DOCX, or text file: run the ingest pipeline: (1) ingest.py prepare --file <path>, (2) read article and write summary to summary_path_abs, (3) ingest.py commit. Files are archived to inbox/processed/ automatically by prepare."
 ```
 
 ### When a Fetch Job Runs
@@ -208,33 +219,22 @@ Options:
 
 ### Present to User (Chat)
 
-Format the output as a structured briefing:
+Format the output as a spoken-style briefing suitable for audio (see Section 1b). No emojis, no tables, no decorative lines. Example:
 
 ```
-📻 Briefing — Today (April 15, 2026)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Here is your briefing for today, April 15th, 2026.
 
-📂 Securities & Enforcement (2 items)
+Starting with Securities and Enforcement. You have two items here.
 
-  1. ⭐ SEC Files Insider Trading Charges Against Former XYZ Exec
-     Source: Reuters Legal | Relevance: 92%
-     Summary: The SEC charged a former VP...
-     [unread] [auto-fetched]
+Number one, and the top pick: "SEC Files Insider Trading Charges Against Former XYZ Exec." This comes from Reuters Legal with a relevance score of 92 percent. The SEC charged a former VP... This one is unread and was auto-fetched.
 
-  2. New SPAC Disclosure Requirements Take Effect
-     Source: SEC.gov | Relevance: 78%
-     Summary: Enhanced disclosure rules...
-     [unread] [auto-fetched]
+Number two: "New SPAC Disclosure Requirements Take Effect." From SEC.gov, relevance 78 percent. Enhanced disclosure rules... Also unread and auto-fetched.
 
-📂 Corporate / M&A (1 item)
+Next up, Corporate and M&A. One item.
 
-  3. Tech Giant Acquires AI Startup for $2B
-     Source: Bloomberg | Relevance: 71%
-     ...
+Number three: "Tech Giant Acquires AI Startup for $2B." From Bloomberg, relevance 71 percent.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 Stats: 5 items | 4 unread | 1 discussed
-   Top topics: SEC enforcement (2), M&A (1), Fintech (1)
+To wrap up, you have 5 items total, 4 unread, and 1 already discussed. The top topics today are SEC enforcement with 2 items, M&A with 1, and Fintech with 1.
 ```
 
 After presenting, ask: "Want to discuss any of these, or should I continue with a deeper dive on the top item?"
@@ -249,55 +249,7 @@ cd {this_skill_dir} && python scripts/index_manager.py mark-read \
 
 ---
 
-## 7. Voice Briefing Mode
-
-When the conversation is happening over the **voice channel** (Twilio call), adapt the output for spoken delivery.
-
-### Output Rules for Voice
-
-- **No markdown** — no bullets, no bold, no headers
-- **Short sentences** — natural spoken rhythm, conversational tone
-- **Smooth transitions** — "Next up...", "Moving on to...", "The third item is..."
-- **Numbers spoken naturally** — "about fifteen hundred" not "1,500"
-- **Pause points** — after each item, ask "Want to discuss this, or shall I continue?"
-
-### Voice Briefing Flow
-
-```
-Agent: "Good morning. You have 5 items in today's briefing, 
-        across 3 topics. Starting with the most important.
-
-        First: The SEC filed insider trading charges against a 
-        former executive at XYZ Corp. This relates to trades 
-        made right before the acquisition announcement. 
-        Relevance score: ninety-two percent.
-
-        Would you like to discuss this one, or should I move on?"
-
-User:  "Tell me more."
-
-Agent: [reads full article summary with analysis]
-
-User:  "Draft a quick note about the key takeaway."
-
-Agent: [drafts note, reads it back for approval]
-
-User:  "Good. Next."
-
-Agent: "Number two: New SPAC disclosure requirements took 
-        effect today. This could impact the pending Delta 
-        transaction..."
-```
-
-### End of Voice Briefing
-
-- Summarize what was covered: "We covered 5 items today. You discussed 2 and I drafted 1 note."
-- Offer to export: "Would you like me to save a summary you can review later?"
-- Mark briefed items as read.
-
----
-
-## 8. Interactive Discussion
+## 7. Interactive Discussion
 
 When the user wants to discuss a specific item:
 
@@ -319,65 +271,28 @@ cd {this_skill_dir} && python scripts/index_manager.py list \
 ```
 Look for items with overlapping topics and mention them: "This connects to an article from yesterday about..."
 
----
+### Capturing Discussion Output
 
-## 9. Hands-Free Work Mode
+After a discussion, the user may want to save what came out of it — notes, takeaways, or action items. This is the natural end of the discuss flow, not a standalone task.
 
-When the user requests work output, detect the type and produce role-appropriate content.
+When the user asks to capture output (e.g. "save these notes", "what are the action items", "write up what we discussed"):
 
-### Detecting Work Intent
+1. **Generate the output** based on the discussion that just happened:
+   - **Discussion notes**: key points, insights, and questions raised during the conversation
+   - **Takeaways**: the main conclusions or learnings from the paper
+   - **Action items**: concrete next steps the user identified during discussion
+2. **Save to `work/`** with a descriptive filename linking it to the source article:
+   ```
+   work/<type>_<date>_<item_id>.md
+   ```
+   Types: `notes`, `takeaways`, `action_items`
+3. **Confirm** what was saved and remind the user they can export it later.
 
-Trigger phrases:
-- "Draft a summary of..."
-- "Prepare a case brief..."
-- "Organize my notes on..."
-- "Write action items..."
-- "Draft an email about..."
-- "Compare articles X and Y..."
-
-### Work Types and Output
-
-| Request | Output Format | Saved To |
-|---------|--------------|----------|
-| Summary | Structured summary with key takeaways | `work/summary_{date}_{topic}.md` |
-| Case brief | IRAC format (Issue, Rule, Application, Conclusion) | `work/brief_{date}_{topic}.md` |
-| Notes | Structured outline with bullet points | `work/notes_{date}_{topic}.md` |
-| Action items | Checklist with priorities | `work/action_items_{date}.md` |
-| Email draft | Subject line + body | `work/email_{date}_{topic}.md` |
-| Comparison | Side-by-side analysis | `work/comparison_{date}_{id}.md` |
-
-### Role-Specific Formatting
-
-Read `profile.major_field` from `config.json` and adapt:
-
-- **Law**: Issue → Rule → Application → Conclusion (IRAC); legal citations; case comparisons; statute references
-- **Finance**: Executive summary; key metrics and figures; risk/opportunity matrix; market implications
-- **Media**: Inverted pyramid structure; key quotes highlighted; source attribution; angle suggestions
-- **Technology**: Technical summary; architecture implications; comparison with alternatives; action items
-- **Healthcare**: Clinical significance; regulatory implications; patient impact; evidence quality assessment
-- **General**: Clean bullet points; key takeaways; next steps
-
-### Voice Work Flow
-
-When in voice mode:
-1. Draft the content silently.
-2. Read it back to the user in full.
-3. Ask: "Would you like to change anything?"
-4. Iterate based on verbal feedback.
-5. Save the final version.
-
-### Saving Work Output
-
-Write the output using `write_file` to the appropriate path under `work/`. Confirm:
-```
-Saved: "Case Brief - XYZ Corp Insider Trading"
-  → work/brief_2026-04-15_xyz_insider.md
-  → Want me to export this, or keep working?
-```
+These work files accumulate over time and can be included in exports (see Section 8).
 
 ---
 
-## 10. Export
+## 8. Export
 
 When the user asks to export content:
 
@@ -387,7 +302,7 @@ When the user asks to export content:
 cd {this_skill_dir} && python scripts/export_summary.py \
   --workspace-dir "<workspace_dir>" \
   --item-ids "abc123,def456" \
-  --work-files "brief_2026-04-15_xyz.md,action_items_2026-04-15.md" \
+  --work-files "notes_2026-04-15_abc123.md,action_items_2026-04-15_def456.md" \
   --format md \
   --output "<workspace_dir>/exports/briefing_2026-04-15.md" \
   --title "Daily Briefing - April 15, 2026"
@@ -403,8 +318,8 @@ Options:
 
 Use `send_file_to_user` to deliver the export:
 ```
-Here's your briefing export for today. It includes 3 article summaries, 
-1 case brief, and your action items.
+Here is your export for today. It includes 3 article summaries, 
+discussion notes from 2 papers, and your action items.
 ```
 
 ### Export Without Explicit IDs
@@ -416,7 +331,7 @@ If the user says "export today's briefing" without specifying items:
 
 ---
 
-## 11. Knowledge Base Management
+## 9. Knowledge Base Management
 
 ### Workspace Structure
 
@@ -427,7 +342,7 @@ If the user says "export today's briefing" without specifying items:
 ├── inbox/                   # Drop zone — user can add files here directly
 │   └── processed/           # Originals moved here after processing
 ├── articles/                # Extracted content (one .md per item)
-├── work/                    # Work outputs (summaries, briefs, notes)
+├── work/                    # Discussion output (notes, takeaways, action items)
 └── exports/                 # Exported briefing documents
 ```
 
@@ -449,33 +364,24 @@ cd {this_skill_dir} && python scripts/index_manager.py remove \
   --workspace-dir "<workspace_dir>" --id <item_id>
 ```
 
-### Bookmarklet Setup
-
-If the user asks for a way to save pages from their browser, generate a bookmarklet. Explain that they should create a new bookmark in their browser toolbar and paste this as the URL:
-
-```
-javascript:void(fetch('http://localhost:<PORT>/api/v1/agents/<AGENT_ID>/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Save this URL to my reading list: '+location.href})}).then(()=>alert('Saved!')).catch(()=>alert('QwenPaw not running')))
-```
-
-Replace `<PORT>` and `<AGENT_ID>` with the actual values. The user can find these in their QwenPaw config.
-
 ---
 
-## 12. Quick Reference
+## 10. Quick Reference
 
 | User Says | Agent Does |
 |-----------|-----------|
-| "Save this" + file | Ingest file → extract → index → confirm |
-| "Save this: URL" | Fetch URL → extract → index → confirm |
-| "What's new today?" | Run rank_and_summarize → present briefing |
-| "This week's briefing" | Briefing with `--timeframe week` |
-| "Unread items on fintech" | `--filter-status unread --filter-topic fintech` |
-| "Tell me about #3" | Load article → discuss → mark discussed |
-| "Draft a summary" | Produce role-appropriate summary → save to work/ |
-| "Organize my notes on X" | Structure notes → save to work/ |
-| "Action items" | Generate checklist → save to work/ |
-| "Export today's briefing" | Compile articles + work → send file |
-| "Add AI policy to my topics" | Update config.json |
+| "Save this" + file | Run `ingest.py prepare` → read extracted article → write summary to `_script.md` → run `ingest.py commit` → confirm |
+| "Save this: URL" | Run `ingest.py prepare --url` → read extracted article → write summary to `_script.md` → run `ingest.py commit` → confirm |
+| "What's new today?" / "What's in my reading list?" | Read `index.json` → run `rank_and_summarize.py --timeframe today` → present ranked briefing grouped by topic |
+| "This week's briefing" / "Catch me up" | Read `index.json` → run `rank_and_summarize.py --timeframe week` → present ranked briefing |
+| "Unread items on fintech" | Read `index.json` → run `rank_and_summarize.py --filter-status unread --filter-topic fintech` → present filtered list |
+| "Tell me about the SEC filing" / "What do I have on SPAC regulation?" | Look up item in `index.json` by topic or title → read pre-ingested `_script.md` from `articles/` → present summary → discuss → mark discussed |
+| "Discuss #3" / "Tell me more about the Nvidia article" | Find item in `index.json` → read its `_script.md` from `articles/` → present and discuss → mark discussed |
+| "Save these notes" / "Write up what we discussed" | Capture key points and insights from the current discussion → save to `work/notes_<date>_<id>.md` |
+| "What are the action items from this paper?" | Extract action items from the discussion → save to `work/action_items_<date>_<id>.md` |
+| "What are the takeaways?" | Summarize main conclusions from the discussion → save to `work/takeaways_<date>_<id>.md` |
+| "Export today's briefing" | Run `export_summary.py` → compile articles + work → send file |
+| "Add AI policy to my topics" | Update `config.json` interests |
 | "Set up auto-fetch" | Create cron job via cron skill |
-| "What sources am I tracking?" | Read and display config.json sources |
-| "How many items do I have?" | Run stats command |
+| "What sources am I tracking?" | Read and display `config.json` sources |
+| "How many items do I have?" | Run `index_manager.py stats` |

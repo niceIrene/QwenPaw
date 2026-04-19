@@ -45,8 +45,6 @@ QwenPaw skills are Markdown instruction documents that guide the agent's behavio
 | PDF extraction | `pdf` skill (existing) + pdfplumber |
 | Scheduled fetching | `cron` skill (existing) |
 | File I/O for knowledge base | `read_file`, `write_file`, `edit_file` (built-in tools) |
-| Voice briefing (TTS) | Voice channel via Twilio ConversationRelay (existing) |
-| Voice input (STT) | Deepgram / Whisper transcription (existing) |
 | Content delivery | `send_file_to_user` (built-in tool) |
 | Data processing | `execute_shell_command` / `execute_python_code` (built-in tools) |
 | Semantic search | `memory_search` (built-in tool) |
@@ -801,35 +799,7 @@ When user asks for a briefing:
    - "Older (2 items)"
 5. Each item shows: rank, title, source, one-line summary, topics
 
-#### Section 7: Voice Briefing Mode
-
-When the conversation is over the voice channel:
-
-**Output adaptation:**
-- No markdown formatting, no bullet points
-- Short sentences, natural spoken rhythm
-- Transitions: "Next up...", "Moving on to...", "The third item is..."
-- Numbers spoken naturally: "about fifteen hundred" not "1,500"
-
-**Interactive flow:**
-```
-Agent: "Good morning. You have 5 items in today's briefing. 
-        Starting with the most important: [summary of item 1]. 
-        Want to discuss this, or shall I continue?"
-User:  "Tell me more about that one."
-Agent: [reads full article summary, offers analysis]
-User:  "Draft a quick note about the key takeaway."
-Agent: [drafts note, reads it back]
-User:  "Good. Next."
-Agent: "Number two: [summary of item 2]..."
-```
-
-**End of briefing:**
-- Summarize what was covered and any work produced
-- Offer to export notes/action items
-- Mark briefed items as `read: true`
-
-#### Section 8: Interactive Discussion
+#### Section 7: Interactive Discussion
 
 The agent loads article content from `articles/` and engages in freeform Q&A:
 - User can reference articles by number, title, or topic
@@ -837,7 +807,7 @@ The agent loads article content from `articles/` and engages in freeform Q&A:
 - Cross-referencing between articles when relevant
 - After discussion, marks items as `discussed: true`
 
-#### Section 9: Hands-Free Work Mode
+#### Section 8: Hands-Free Work Mode
 
 Detects work intent and produces role-appropriate output:
 
@@ -859,7 +829,7 @@ Detects work intent and produces role-appropriate output:
 
 **Voice workflow**: Agent reads back drafts, takes verbal corrections, iterates until user approves.
 
-#### Section 10: Export
+#### Section 9: Export
 
 When user asks to export:
 1. Call `scripts/export_summary.py` with selected item IDs and/or work files
@@ -1174,4 +1144,3 @@ User interests are stored in `config.json` (workspace file). Additionally, they 
 - [ ] Test work mode (draft summary)
 - [ ] Test export
 - [ ] Test cron auto-fetch setup
-- [ ] Test voice briefing (if Twilio configured)
