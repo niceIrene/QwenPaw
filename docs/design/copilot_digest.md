@@ -482,7 +482,7 @@ Options:
 The knowledge base lives in the **agent workspace**, which both the agent and the user can access:
 
 ```
-/Users/linyin/.qwenpaw/workspaces/copilot-digest/
+~/.qwenpaw/workspaces/copilot-digest/
 ├── config.json              # User profile & interests
 ├── index.json               # Master content index
 ├── inbox/                   # Drop zone for files (user can drop files here directly)
@@ -497,7 +497,7 @@ The knowledge base lives in the **agent workspace**, which both the agent and th
 
 **Access model:**
 - **Agent** reads/writes all directories via built-in file tools
-- **User** can directly browse `/Users/linyin/.qwenpaw/workspaces/copilot-digest/` in Finder/Explorer to view articles, exports, and work outputs
+- **User** can directly browse `~/.qwenpaw/workspaces/copilot-digest/` in Finder/Explorer to view articles, exports, and work outputs
 - **User** can drop files into `inbox/` for the agent to auto-ingest (see 6.3)
 - **Exports** in `exports/` are polished documents the user can open directly or share
 
@@ -559,7 +559,7 @@ Agent: "Added 3 items to your reading list:
 For users who want to add many files at once without chatting, there's a **drop folder**:
 
 ```
-/Users/linyin/.qwenpaw/workspaces/copilot-digest/inbox/
+~/.qwenpaw/workspaces/copilot-digest/inbox/
 ```
 
 **How it works:**
