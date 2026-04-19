@@ -200,6 +200,11 @@ def build_mcp_server(
             tool. Always retrieve the article first, then use its content
             to answer the user's question.
 
+            This tool automatically returns the curated script/summary
+            version of the article if one exists (the ``_script.md``
+            file), otherwise the raw article text, otherwise the
+            inline summary from the index.
+
             IMPORTANT: When presenting this article to the user, show the
             content EXACTLY as returned by this tool. Do NOT summarize,
             paraphrase, or condense the returned text. The user wants to
@@ -405,22 +410,31 @@ def build_mcp_server(
             content: str,
             article_id: str | None = None,
         ) -> str:
-            """Save discussion output (notes, takeaways, action items) to
-            the user's workspace.
+            """Save discussion notes, takeaways, or action items to disk.
 
-            Use when the user asks to save notes, capture takeaways, or
-            record action items from a discussion. Examples:
-            - "Save these notes"
-            - "Write up what we discussed"
-            - "What are the action items from this paper?"
-            - "What are the takeaways?"
+            YOU MUST call this tool whenever the user asks to save,
+            record, persist, or write down notes, takeaways, action
+            items, or discussion output. Trigger phrases include:
+            - "save my notes"
+            - "save my discussion notes"
+            - "help me save what we discussed"
+            - "record the takeaways"
+            - "write down the action items"
+            - "capture this discussion"
+            - "persist these notes"
 
-            The content you provide should be well-formatted markdown
-            capturing the key points from the conversation.
+            Do NOT simply print the notes in chat — the user wants
+            them saved to a file on disk so they can reference them
+            later. Always call this tool to write the file.
+
+            You must compose the ``content`` parameter yourself as
+            well-formatted markdown that captures the key points from
+            the conversation so far.
 
             Parameters:
             - output_type: "notes", "takeaways", or "action_items"
-            - content: The markdown content to save
+            - content: Well-formatted markdown you compose from the
+              conversation
             - article_id: Optional article ID this relates to
             """
             return ws_save_work_output(
