@@ -73,6 +73,7 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 qwenpaw = "qwenpaw.cli.main:cli"
 copaw = "qwenpaw.cli.main:cli"
+qwenpaw-mcp = "qwenpaw.mcp_server.cli:main"
 
 # Optional doctor plugins: callable (DoctorRunContext) -> list[str]
 # [project.entry-points."qwenpaw.doctor"]
@@ -92,6 +93,9 @@ local = [
 ]
 whisper = [
     "openai-whisper>=20231117",
+]
+mcp = [
+    "mcp>=1.2.0",
 ]
 full = [
     "qwenpaw[local,whisper]",
