@@ -1,13 +1,6 @@
 ---
 name: copilot_digest
 description: "Helps researchers and professionals digest papers, articles, news, and blogs they don't have time to read. Collects, organizes, ranks, and summarizes content into a personal knowledge base, then delivers briefings and interactive discussions via chat."
-metadata:
-  builtin_skill_version: "1.0"
-  qwenpaw:
-    emoji: "📻"
-    requires:
-      env:
-        - BRIEFER_INTERESTS
 ---
 
 # Copilot Digest
