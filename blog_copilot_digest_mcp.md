@@ -4,7 +4,7 @@
 
 Most people's experience with AI assistants is a chat box in a browser tab. You type a question, read the answer, close the tab. It works, but you are using it like a search engine — not an assistant. An assistant should know what you care about, do things on your behalf, and occasionally tell you something you did not know to ask.
 
-A wave of open-source projects — OpenClaw ([docs.openclaw.ai](https://docs.openclaw.ai/)), QwenPaw ([github](https://github.com/QwenPaw/QwenPaw)), Hermes Agent ([hermes-agent.nousresearch.com](https://hermes-agent.nousresearch.com/)), among others — is trying to build exactly this. I recently wrapped one of QwenPaw's agents as an MCP server so it can plug into Claude.ai and other MCP-compatible hosts directly, including voice on mobile. This post is a walkthrough of the design space: what these personal agents do differently from chatbots, where the rough edges are, and why I think the MCP connector pattern is a surprisingly good way to ship AI assistants to end users today.
+A wave of open-source projects — OpenClaw ([docs.openclaw.ai](https://docs.openclaw.ai/)), QwenPaw ([github](https://github.com/QwenPaw/QwenPaw)), Hermes Agent ([hermes-agent.nousresearch.com](https://hermes-agent.nousresearch.com/)), among others — is trying to build exactly this. I recently wrapped one of QwenPaw's agents as an MCP server so it can plug into Claude.ai and other MCP-compatible hosts directly. This post is a walkthrough of the design space: what these personal agents do differently from chatbots, where the rough edges are, and why I think the MCP connector pattern is a surprisingly good way to ship AI assistants to end users today.
 
 ## Personal assistants vs. chat interfaces
 
@@ -58,25 +58,25 @@ Now when I open Claude — on the web or on my phone — I can say "what is new 
 
 The key design decision in the MCP server is separating **fast, deterministic operations** from **slow, LLM-powered ones**.
 
-**Direct workspace tools** read and write the knowledge base files directly. They respond in milliseconds and cost zero tokens on the agent side. Listing your reading list, fetching an article summary, marking items as read, pulling stats, generating briefings from the index — these are file operations. Claude on the frontend handles the natural language part, which it is doing anyway as part of the chat session.
+**Direct workspace tools** read and write the knowledge base files directly. They respond in milliseconds and cost zero tokens on the agent side. Listing your reading list, fetching an article summary, marking items as read, pulling stats, generating briefings from the index — these are file operations. Claude (or any other MCP client) on the frontend handles the natural language part, which it is doing anyway as part of the chat session.
 
 **Assistant-proxied tools** forward requests to the QwenPaw backend where the Copilot Digest agent does real LLM work: ingesting a URL (fetch, extract, summarize), running a multi-turn discussion about an article, or generating structured digests. These take 10–60 seconds and consume tokens, but they are only invoked when you explicitly ask for heavy lifting.
 
-In practice, roughly 80% of interactions — browsing, reading, status tracking, briefings — hit the direct tools and are free on the agent side. The expensive inference happens only when you genuinely need it. This is a much better cost profile than the heartbeat model, where every scheduled tick carries the same inference cost regardless of whether the output is useful.
+In practice, roughly 80% of hands-free interactions — browsing, reading, status tracking, briefings — hit the direct tools and are free on the assistant side. The expensive inference (cron-driven ingestion, indexing, summarization) still happens on the assistant, but it is cleanly separated from the user-facing layer. You are not paying LLM tokens every time you ask "what's new?" — that is a file read. The assistant does the heavy lifting in the background on its own schedule, and the MCP surface lets you consume the results for free.
+
 
 ## Why this pattern matters
 
-I think there is a more general lesson here about how AI assistants should be presented to users. The MCP connector pattern is an underappreciated sweet spot — not because it solves the problems of personal agents, but because it makes their benefits accessible.
+I think there is a more general lesson here about how AI assistants should be presented to users. The MCP connector pattern is an underappreciated sweet spot — not because it solves the problems of personal assistants, but because it makes their benefits accessible.
 
-**You can talk to your assistant.** Claude's mobile app gives you speech-to-text and text-to-speech for free. I listen to my research briefing while walking, ask follow-ups about a specific paper, and dictate notes — hands-free. No separate TTS pipeline, no custom mobile app. The skill was explicitly designed for this: every response is audio-friendly, full speakable sentences, no tables or ASCII art (Copilot Digest SKILL.md).
+**Lightweight connection.** Building channel integrations means wrestling with webhooks, bot tokens, platform-specific message formats, and webhook lifecycle management — one adapter per platform. MCP flips this: expose a set of tools once, and any compatible host can plug in immediately with just a connector URL and a bearer token. If that host supports voice, you get hands-free access for free. No extra work required.
 
-**The knowledge base stays independent.** Claude handles the conversation with you, while the QwenPaw assistant works 24/7 on the MCP server side — ingesting new content, maintaining the index, and enriching the knowledge base through cron jobs. The two collaborate through MCP tools across a clean boundary: you do not need to dump articles into your chat history or pollute the assistant's context with domain data. Your chat stays a chat; your knowledge base stays a knowledge base.
+**The assistant's context stays clean.** The MCP client handles the conversation with you in its own context. When you browse your reading list or ask about an article, the MCP client talks to the workspace directly — none of that interaction touches the assistant's context window. The assistant's context is reserved for its own work: ingesting content, summarizing, indexing. You can have a long back-and-forth about your reading list without consuming a single token on the assistant side.
 
-**Users stay in an interface they already know.** Claude.ai has polish, safety infrastructure, a mobile app, and voice capabilities that would take years to replicate independently. By connecting to it rather than competing with it, the agent gets all of that for free.
+**Users stay where they already are.** Any MCP-compatible host — a chat client, an IDE, a mobile app, a website — can connect to the assistant immediately. Users do not need to learn a new interface or switch contexts. They interact with the assistant from whatever tool they already have open, with all the history and continuity that tool already provides.
 
-**It scales better than channels.** QwenPaw's channel system — DingTalk, Discord, Telegram, etc. — is powerful, but each integration carries its own authentication flow, message format, webhook lifecycle, and platform-specific quirks. Adding a new channel means writing and maintaining a dedicated adapter. MCP flips this: you expose a set of tools once, and any MCP-compatible host can consume them. The integration burden shifts from the agent developer to the host platform. More importantly, MCP lets you selectively expose capabilities. You can spin up a narrowly scoped MCP server that surfaces only your reading list and briefings — no shell access, no file writes, no admin tools — and hand that connector URL to someone else. They get a curated feed from your knowledge base without touching anything they should not. This makes MCP a natural distribution layer: one agent, multiple connectors, each with a different tool surface tailored to the audience. Channels broadcast; MCP connectors can be precise.
+**It scales beyond channels.** QwenPaw's channel system — DingTalk, Discord, Telegram, etc. — is powerful, but each integration carries its own authentication flow, message format, and platform-specific quirks. MCP flips this: expose a set of tools once, and any compatible host can consume them — whether that's a chat client, a mobile app, or a website that wants to embed your assistant's capabilities directly. The integration burden shifts from you to the host. More importantly, MCP lets you selectively expose capabilities: spin up a narrowly scoped connector that surfaces only your reading list and briefings — no shell access, no file writes — and hand that URL to anyone. One assistant, multiple connectors, each tailored to its audience. Channels broadcast to everyone the same way; MCP connectors can be surgical.
 
-**The assistant's context stays clean.** Most read-heavy interactions — browsing, reading summaries, checking status — go through direct workspace tools without stuffing domain data into the assistant's conversation context. The context window is reserved for real reasoning, not bloated with knowledge base content.
 
 ### Limitations
 
@@ -86,8 +86,6 @@ This is not a silver bullet, and it is worth being explicit about the rough edge
 - Assistant-proxied tools (URL ingestion, discussions) add noticeable latency — sometimes a full minute for large PDFs.
 - Custom connectors in Claude.ai are currently limited to paid tiers.
 - You are coupling to a specific platform's connector implementation. If Claude changes how connectors work, you adapt.
-
-These are real constraints. But for the specific use case of "get a personalized knowledge assistant into someone's hands today, with voice, on their phone, without asking them to run a full agent stack" — this is the most practical approach I have found.
 
 ## Setup
 
@@ -105,7 +103,7 @@ qwenpaw-mcp serve --no-auth --agent-id <your-agent-id> \
 cloudflared tunnel --url http://127.0.0.1:8089
 ```
 
-Then register the HTTPS tunnel URL as a custom connector in Claude.ai (Settings > Profile > Connectors) with the bearer token from terminal 2.
+Then register the Cloudflare tunnel URL (the `https://…trycloudflare.com/mcp` URL from terminal 3) as a custom connector in your MCP client.
 
 ## Closing thoughts
 
