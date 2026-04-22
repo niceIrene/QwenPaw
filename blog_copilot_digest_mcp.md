@@ -38,6 +38,10 @@ These are meaningful protections. They are also not bulletproof. Pattern-based d
 
 The cost and safety concerns are real, but they should not obscure what makes these agents genuinely useful: they can manage a workspace on your behalf and use scheduled jobs to keep it up to date — work that compounds over time without requiring your attention.
 
+[![Copilot Digest — walkthrough](https://img.youtube.com/vi/JxaHM2HpDZo/maxresdefault.jpg)](https://youtu.be/JxaHM2HpDZo)
+
+*A short walkthrough of Copilot Digest running through Claude.ai as an MCP connector.*
+
 To put this into practice, I built an assistant called **Copilot Digest** ([source](https://github.com/niceIrene/QwenPaw/tree/yin/copilot-digest)) on top of QwenPaw — think of it as a personalized knowledge podcaster that helps you digest what matters and stay up to date during dead time like commutes, walks, or chores. It ingests papers, articles, blog posts, and news you do not have time to read, then organizes, ranks, and summarizes them into a local knowledge base. You can browse a reading list, get ranked briefings ("what is new this week?"), read full article summaries, discuss specific papers in depth, capture notes and action items, and export compiled reports. Everything is stored as files on your machine — a workspace directory with an index, article summaries, work outputs, and exports.
 
 With a cron job pointed at your RSS feeds or saved links, the knowledge base grows while you sleep. The agent does the reading, summarizing, and filing; you show up and ask what is new. This is the kind of task personal agents are built for — persistent, background work that a chat interface simply cannot do.

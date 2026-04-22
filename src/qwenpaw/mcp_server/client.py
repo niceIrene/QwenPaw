@@ -4,9 +4,11 @@
 Every tool call becomes one ``POST`` to
 ``/api/agents/{agent_id}/console/chat`` with an SSE response. We consume
 the stream, track the last ``message.completed`` (or ``response.completed``)
-event, and return the assistant's final text. All failure modes resolve
-to descriptive strings rather than raised exceptions, so Claude can show
-the user an explanation instead of an opaque MCP protocol error.
+event, and return the assistant's final text. Infrastructure failures
+(backend down, agent missing, HTTP non-200, timeout, bad file path) are
+raised as ``ToolError`` so FastMCP surfaces them as MCP standard errors
+(``isError: true``) — Claude can then distinguish a failed call from a
+successful one with unexpected-looking text.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from mcp.server.fastmcp.exceptions import ToolError
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,7 @@ class ClientConfig:
     timeout: float
 
 
-async def send_message(  # pylint: disable=too-many-return-statements
+async def send_message(
     text: str,
     config: ClientConfig,
     session_id: str,
@@ -64,35 +67,37 @@ async def send_message(  # pylint: disable=too-many-return-statements
         async with httpx.AsyncClient(timeout=config.timeout) as c:
             async with c.stream("POST", url, json=payload) as resp:
                 if resp.status_code == 404:
-                    return (
+                    raise ToolError(
                         f"Agent '{config.agent_id}' not found. "
-                        "Check --agent-id."
+                        "Check --agent-id.",
                     )
                 if resp.status_code == 503:
-                    return (
+                    raise ToolError(
                         f"Console channel not registered on agent "
-                        f"'{config.agent_id}'."
+                        f"'{config.agent_id}'.",
                     )
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", "replace")
-                    return (
+                    raise ToolError(
                         f"QwenPaw returned HTTP {resp.status_code}: "
-                        f"{body[:200]}"
+                        f"{body[:200]}",
                     )
                 return await _consume_sse(resp, progress_cb)
-    except httpx.ConnectError:
-        return (
+    except ToolError:
+        raise
+    except httpx.ConnectError as exc:
+        raise ToolError(
             f"Cannot reach QwenPaw at {config.base_url}. "
-            "Is 'copaw app' running?"
-        )
-    except httpx.TimeoutException:
-        return (
+            "Is 'copaw app' running?",
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise ToolError(
             f"QwenPaw did not finish within {int(config.timeout)}s. "
-            "Long ingests may still be running — check the QwenPaw console."
-        )
+            "Long ingests may still be running — check the QwenPaw console.",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("Unexpected error talking to QwenPaw")
-        return f"QwenPaw proxy error: {exc}"
+        raise ToolError(f"QwenPaw proxy error: {exc}") from exc
 
 
 async def ingest_file(
@@ -105,18 +110,18 @@ async def ingest_file(
     abs_path = Path(path).expanduser()
     try:
         abs_path = abs_path.resolve(strict=True)
-    except (FileNotFoundError, OSError):
-        return f"File not found / not readable: {path}"
+    except (FileNotFoundError, OSError) as exc:
+        raise ToolError(f"File not found / not readable: {path}") from exc
 
     if not abs_path.is_file() or not os.access(abs_path, os.R_OK):
-        return f"File not found / not readable: {path}"
+        raise ToolError(f"File not found / not readable: {path}")
 
     suffix = abs_path.suffix.lower()
     source_type = _EXT_TO_SOURCE_TYPE.get(suffix)
     if source_type is None:
-        return (
+        raise ToolError(
             f"Unsupported file type '{suffix}'. Copilot Digest handles "
-            "PDF, CSV, TXT, and MD."
+            "PDF, CSV, TXT, and MD.",
         )
 
     prompt_lines = [
@@ -154,7 +159,7 @@ async def _consume_sse(
                 await progress_cb("Assistant is processing...")
 
         if isinstance(event, dict) and "error" in event and len(event) == 1:
-            return f"QwenPaw error: {event['error']}"
+            raise ToolError(f"QwenPaw error: {event['error']}")
 
         terminal = _extract_terminal_text(event)
         if terminal:
