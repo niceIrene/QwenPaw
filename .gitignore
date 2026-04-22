@@ -111,3 +111,9 @@ src/.hypothesis/
 
 # Worktrees
 .worktrees/
+
+# Demo video source/intermediates (hosted on YouTube, see README)
+/video.mov
+/video.srt
+/video_1.5x_subbed.mp4
+/process_video.sh

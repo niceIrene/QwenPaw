@@ -4,6 +4,12 @@
 >
 > Blog post: [Beyond the Chat Box: What a Personal AI Assistant Actually Is](blog_copilot_digest_mcp.md) ([中文](blog_copilot_digest_mcp_zh.md))
 
+## Demo
+
+[![Copilot Digest — walkthrough](https://img.youtube.com/vi/JxaHM2HpDZo/maxresdefault.jpg)](https://youtu.be/JxaHM2HpDZo)
+
+*Click to watch on YouTube (~1.5× speed, subtitled).*
+
 ---
 
 Connect your QwenPaw Copilot Digest assistant to **claude.ai** (web) or
@@ -179,6 +185,49 @@ These forward to the Copilot Digest assistant and may take 10-60 seconds.
 | Tool | What to say to Claude |
 |---|---|
 | `reset_session` | *"forget the previous conversation"* / *"start over"* |
+
+---
+
+## How it works
+
+```
+Claude (claude.ai web / mobile app)
+  │
+  │  Streamable HTTP  (MCP 2025-03-26 transport)
+  ▼
+cloudflared tunnel
+  │
+  ▼
+qwenpaw-mcp server  (port 8089, uvicorn + mcp.streamable_http_app())
+  ├── server.py      — FastMCP tool definitions, handles the MCP protocol
+  ├── workspace.py   — direct read/write of workspace files
+  │                    (used by the fast tools: list_reading_list,
+  │                     get_article, get_briefing, mark_*, get_stats,
+  │                     get_config, update_config, save_work_output,
+  │                     export_briefing)
+  └── client.py      — HTTP + SSE proxy to the QwenPaw backend
+                       (used by send_message, ingest_url, ingest_file)
+          │
+          │  POST /api/agents/{agent_id}/console/chat
+          │  response: text/event-stream (backend's own API, not MCP)
+          ▼
+QwenPaw backend  (port 8088)
+  │
+  ▼
+Filesystem  /  LLM
+```
+
+**Two transports, don't confuse them.** The Claude ↔ MCP hop uses
+**Streamable HTTP** — the current MCP transport standard, which
+replaced the older SSE-only transport. The MCP ↔ QwenPaw-backend hop
+separately uses an SSE-style response stream, but that's the backend's
+own console API, not the MCP protocol.
+
+**Two latencies.** The *fast path* (`workspace.py`) answers
+browse/read/status calls in milliseconds by touching workspace files
+directly. The *slow path* (`client.py`) forwards conversational work
+to the Copilot Digest assistant, which can take 10–60 seconds because
+an LLM is in the loop.
 
 ---
 

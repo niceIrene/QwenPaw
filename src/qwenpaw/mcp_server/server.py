@@ -36,10 +36,19 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
 from .client import ClientConfig, ingest_file, send_message
+from .models import SavedOutput, StatusUpdate
 from .workspace import (
+    BriefingStatus,
+    BriefingTimeframe,
+    GroupBy,
+    ListTimeframe,
+    OutputType,
+    ReadStatus,
+    SummaryLength,
     export_briefing as ws_export_briefing,
     get_article as ws_get_article,
     get_briefing as ws_get_briefing,
@@ -144,11 +153,11 @@ def build_mcp_server(
 
     if ws_path is not None:
 
-        @mcp.tool()
+        @mcp.tool(name="list_reading_list")
         async def list_reading_list_tool(
             ctx: Context,
-            status: str = "unread",
-            timeframe: str = "all",
+            status: ReadStatus = "unread",
+            timeframe: ListTimeframe = "all",
             topic: str | None = None,
             limit: int = 50,
         ) -> str:
@@ -183,9 +192,7 @@ def build_mcp_server(
                 limit=limit,
             )
 
-        list_reading_list_tool.__name__ = "list_reading_list"
-
-        @mcp.tool()
+        @mcp.tool(name="get_article")
         async def get_article_tool(article_id: str, ctx: Context) -> str:
             """Retrieve the FULL TEXT of a specific article from the user's
             personal knowledge base.
@@ -221,10 +228,10 @@ def build_mcp_server(
             """
             return ws_get_article(ws_path, article_id)
 
-        get_article_tool.__name__ = "get_article"
-
-        @mcp.tool()
-        async def mark_read_tool(article_id: str, ctx: Context) -> str:
+        @mcp.tool(name="mark_read")
+        async def mark_read_tool(
+            article_id: str, ctx: Context,
+        ) -> StatusUpdate:
             """Mark an article as read in the user's knowledge base.
 
             Call this after the user has reviewed an article or when they
@@ -236,10 +243,10 @@ def build_mcp_server(
             """
             return ws_mark_read(ws_path, article_id)
 
-        mark_read_tool.__name__ = "mark_read"
-
-        @mcp.tool()
-        async def mark_unread_tool(article_id: str, ctx: Context) -> str:
+        @mcp.tool(name="mark_unread")
+        async def mark_unread_tool(
+            article_id: str, ctx: Context,
+        ) -> StatusUpdate:
             """Mark an article as unread in the user's knowledge base.
 
             Use when the user wants to mark a previously read article back
@@ -250,9 +257,7 @@ def build_mcp_server(
             """
             return ws_mark_unread(ws_path, article_id)
 
-        mark_unread_tool.__name__ = "mark_unread"
-
-        @mcp.tool()
+        @mcp.tool(name="get_stats")
         async def get_stats_tool(ctx: Context) -> str:
             """Show statistics about the user's knowledge base.
 
@@ -264,10 +269,10 @@ def build_mcp_server(
             """
             return ws_get_stats(ws_path)
 
-        get_stats_tool.__name__ = "get_stats"
-
-        @mcp.tool()
-        async def mark_discussed_tool(article_id: str, ctx: Context) -> str:
+        @mcp.tool(name="mark_discussed")
+        async def mark_discussed_tool(
+            article_id: str, ctx: Context,
+        ) -> StatusUpdate:
             """Mark an article as discussed in the user's knowledge base.
 
             Call this after the user has had a discussion about an article.
@@ -281,15 +286,13 @@ def build_mcp_server(
             """
             return ws_mark_discussed(ws_path, article_id)
 
-        mark_discussed_tool.__name__ = "mark_discussed"
-
-        @mcp.tool()
+        @mcp.tool(name="get_briefing")
         async def get_briefing_tool(
             ctx: Context,
-            timeframe: str = "today",
-            group_by: str = "topic",
+            timeframe: BriefingTimeframe = "today",
+            group_by: GroupBy = "topic",
             filter_topic: str | None = None,
-            filter_status: str = "all",
+            filter_status: BriefingStatus = "all",
             top_n: int = 0,
         ) -> str:
             """Get a ranked, scored briefing of the user's reading list.
@@ -327,11 +330,9 @@ def build_mcp_server(
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.exception("get_briefing failed")
-                return f"Error generating briefing: {exc}"
+                raise ToolError(f"Error generating briefing: {exc}") from exc
 
-        get_briefing_tool.__name__ = "get_briefing"
-
-        @mcp.tool()
+        @mcp.tool(name="get_config")
         async def get_config_tool(ctx: Context) -> str:
             """Show the user's Copilot Digest configuration.
 
@@ -344,9 +345,7 @@ def build_mcp_server(
             """
             return ws_get_config(ws_path)
 
-        get_config_tool.__name__ = "get_config"
-
-        @mcp.tool()
+        @mcp.tool(name="update_config")
         async def update_config_tool(
             ctx: Context,
             add_topics: str | None = None,
@@ -354,7 +353,7 @@ def build_mcp_server(
             add_source_name: str | None = None,
             add_source_url: str | None = None,
             remove_sources: str | None = None,
-            set_summary_length: str | None = None,
+            set_summary_length: SummaryLength | None = None,
             set_fetch_cron: str | None = None,
         ) -> str:
             """Update the user's Copilot Digest configuration.
@@ -407,15 +406,13 @@ def build_mcp_server(
                 set_fetch_cron=set_fetch_cron,
             )
 
-        update_config_tool.__name__ = "update_config"
-
-        @mcp.tool()
+        @mcp.tool(name="save_work_output")
         async def save_work_output_tool(
             ctx: Context,
-            output_type: str,
+            output_type: OutputType,
             content: str,
             article_id: str | None = None,
-        ) -> str:
+        ) -> SavedOutput:
             """Save discussion notes, takeaways, or action items to the
             user's Copilot Digest workspace.
 
@@ -451,9 +448,7 @@ def build_mcp_server(
                 article_id=article_id,
             )
 
-        save_work_output_tool.__name__ = "save_work_output"
-
-        @mcp.tool()
+        @mcp.tool(name="export_briefing")
         async def export_briefing_tool(
             ctx: Context,
             item_ids: str | None = None,
@@ -492,8 +487,6 @@ def build_mcp_server(
                 title=title,
             )
 
-        export_briefing_tool.__name__ = "export_briefing"
-
         logger.info(
             "Workspace tools enabled (workspace=%s): "
             "list_reading_list, get_article, mark_read, mark_unread, "
@@ -511,7 +504,7 @@ def build_mcp_server(
     # Assistant-proxied tools
     # ------------------------------------------------------------------
 
-    @mcp.tool()
+    @mcp.tool(name="send_message")
     async def send_message_tool(text: str, ctx: Context) -> str:
         """Send a message to the user's Copilot Digest assistant for
         conversation, discussion, or complex tasks.
@@ -540,9 +533,7 @@ def build_mcp_server(
             progress_cb=_progress,
         )
 
-    send_message_tool.__name__ = "send_message"
-
-    @mcp.tool()
+    @mcp.tool(name="ingest_url")
     async def ingest_url_tool(
         url: str,
         ctx: Context,
@@ -580,9 +571,7 @@ def build_mcp_server(
             progress_cb=_progress,
         )
 
-    ingest_url_tool.__name__ = "ingest_url"
-
-    @mcp.tool()
+    @mcp.tool(name="ingest_file")
     async def ingest_file_tool(
         path: str,
         ctx: Context,
@@ -605,13 +594,11 @@ def build_mcp_server(
         await ctx.info(f"Ingesting file: {path}")
         return await ingest_file(path, title, client_config, session_id)
 
-    ingest_file_tool.__name__ = "ingest_file"
-
     # ------------------------------------------------------------------
     # Session management
     # ------------------------------------------------------------------
 
-    @mcp.tool()
+    @mcp.tool(name="reset_session")
     async def reset_session_tool(ctx: Context) -> str:
         """Reset the conversation with the Copilot Digest assistant.
 
@@ -622,7 +609,5 @@ def build_mcp_server(
         new_session = sessions.reset(_mcp_session_id(ctx))
         logger.info("Reset MCP session -> QwenPaw session %s", new_session)
         return "Session reset. The assistant will start fresh."
-
-    reset_session_tool.__name__ = "reset_session"
 
     return mcp

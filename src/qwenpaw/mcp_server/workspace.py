@@ -20,10 +20,24 @@ import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
+from mcp.server.fastmcp.exceptions import ToolError
+
+from .models import SavedOutput, StatusUpdate
+
 logger = logging.getLogger(__name__)
+
+ReadStatus = Literal["unread", "read", "all"]
+BriefingStatus = Literal["all", "unread", "read", "discussed"]
+ListTimeframe = Literal["all", "today", "yesterday", "week", "month"]
+BriefingTimeframe = Literal[
+    "today", "yesterday", "week", "weekly", "month", "all"
+]
+GroupBy = Literal["topic", "date", "none"]
+OutputType = Literal["notes", "takeaways", "action_items"]
+SummaryLength = Literal["brief", "standard", "detailed"]
 
 
 # ---------------------------------------------------------------------------
@@ -66,8 +80,8 @@ def _save_index(workspace_dir: Path, index: dict[str, Any]) -> None:
 def list_items(
     workspace_dir: Path,
     *,
-    status: str = "unread",
-    timeframe: str = "all",
+    status: ReadStatus = "unread",
+    timeframe: ListTimeframe = "all",
     topic: str | None = None,
     limit: int = 50,
 ) -> str:
@@ -149,7 +163,8 @@ def list_items(
             f"\n[{item_id}] {title}\n"
             f"  Saved: {saved} | Type: {source} | Status: {read_flag}\n"
             f"  Topics: {topics_str}\n"
-            f"  Summary: {summary}",
+            f"  Summary: {summary}\n"
+            f'  → get_article(article_id="{item_id}") for full text',
         )
 
     return "\n".join(lines)
@@ -281,32 +296,32 @@ def _to_script_path(article_path: Path) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
-def mark_read(workspace_dir: Path, article_id: str) -> str:
-    """Mark an item as read. Returns confirmation or error string."""
+def mark_read(workspace_dir: Path, article_id: str) -> StatusUpdate:
+    """Mark an item as read. Raises ToolError if the item is not found."""
     return _set_read_flag(workspace_dir, article_id, read=True)
 
 
-def mark_unread(workspace_dir: Path, article_id: str) -> str:
-    """Mark an item as unread. Returns confirmation or error string."""
+def mark_unread(workspace_dir: Path, article_id: str) -> StatusUpdate:
+    """Mark an item as unread. Raises ToolError if the item is not found."""
     return _set_read_flag(workspace_dir, article_id, read=False)
 
 
-def _set_read_flag(workspace_dir: Path, article_id: str, *, read: bool) -> str:
+def _set_read_flag(
+    workspace_dir: Path, article_id: str, *, read: bool,
+) -> StatusUpdate:
     """Set the ``read`` flag on an item."""
     index = load_index(workspace_dir)
     for item in index.get("items", []):
         if item.get("id") == article_id:
             item["read"] = read
             _save_index(workspace_dir, index)
-            return json.dumps(
-                {
-                    "status": "updated",
-                    "id": article_id,
-                    "title": item.get("title", ""),
-                    "read": read,
-                },
+            return StatusUpdate(
+                item_id=article_id,
+                title=item.get("title", ""),
+                read=read,
+                discussed=bool(item.get("discussed", False)),
             )
-    return f"Item '{article_id}' not found in the index."
+    raise ToolError(f"Item '{article_id}' not found in the index.")
 
 
 # ---------------------------------------------------------------------------
@@ -385,24 +400,24 @@ def _parse_iso(iso_str: str) -> datetime:
 # ---------------------------------------------------------------------------
 
 
-def mark_discussed(workspace_dir: Path, article_id: str) -> str:
-    """Mark an item as discussed (also sets read=True). Returns JSON."""
+def mark_discussed(workspace_dir: Path, article_id: str) -> StatusUpdate:
+    """Mark an item as discussed (also sets read=True).
+
+    Raises ``ToolError`` if the item is not found in the index.
+    """
     index = load_index(workspace_dir)
     for item in index.get("items", []):
         if item.get("id") == article_id:
             item["discussed"] = True
             item["read"] = True
             _save_index(workspace_dir, index)
-            return json.dumps(
-                {
-                    "status": "updated",
-                    "id": article_id,
-                    "title": item.get("title", ""),
-                    "discussed": True,
-                    "read": True,
-                },
+            return StatusUpdate(
+                item_id=article_id,
+                title=item.get("title", ""),
+                read=True,
+                discussed=True,
             )
-    return f"Item '{article_id}' not found in the index."
+    raise ToolError(f"Item '{article_id}' not found in the index.")
 
 
 # ---------------------------------------------------------------------------
@@ -497,10 +512,10 @@ def _score_item(item: dict, config: dict, now: datetime) -> dict:
 def get_briefing(  # pylint: disable=too-many-branches,too-many-statements
     workspace_dir: Path,
     *,
-    timeframe: str = "all",
-    group_by: str = "topic",
+    timeframe: BriefingTimeframe = "all",
+    group_by: GroupBy = "topic",
     filter_topic: str | None = None,
-    filter_status: str = "all",
+    filter_status: BriefingStatus = "all",
     top_n: int = 0,
 ) -> str:
     """Return a ranked briefing as formatted markdown.
@@ -674,15 +689,17 @@ def _format_briefing(
             "",
         )
         summary = item.get("summary", "")
+        item_id = item.get("id", "?")
         out = [
             f"**{rank}. {item.get('title', '(untitled)')}**",
-            f"   ID: {item.get('id', '?')} | Source: {domain}"
+            f"   ID: {item_id} | Source: {domain}"
             f" | Relevance: {pct}% {' '.join(tags)}",
         ]
         if summary:
             out.append(
                 f"   {summary[:200]}{'...' if len(summary) > 200 else ''}",
             )
+        out.append(f'   → get_article(article_id="{item_id}") for full text')
         out.append("")
         return out
 
@@ -824,7 +841,7 @@ def update_config(  # pylint: disable=too-many-branches
     add_sources: list[dict[str, str]] | None = None,
     remove_sources: list[str] | None = None,
     set_sub_fields: list[str] | None = None,
-    set_summary_length: str | None = None,
+    set_summary_length: SummaryLength | None = None,
     set_fetch_cron: str | None = None,
 ) -> str:
     """Update config.json with the given changes. Returns summary."""
@@ -911,37 +928,20 @@ def update_config(  # pylint: disable=too-many-branches
 def save_work_output(
     workspace_dir: Path,
     *,
-    output_type: str,
+    output_type: OutputType,
     content: str,
     article_id: str | None = None,
-) -> str:
-    """Save a work output (notes, takeaways, action_items) to ``work/``.
-
-    Parameters
-    ----------
-    output_type : str
-        ``"notes"``, ``"takeaways"``, or ``"action_items"``.
-    content : str
-        Markdown content to save.
-    article_id : str | None
-        Optional article ID to associate with.
-
-    Returns
-    -------
-    str
-        JSON with status and file path.
-    """
+) -> SavedOutput:
+    """Save a work output (notes, takeaways, action_items) to ``work/``."""
     work_dir = workspace_dir / "work"
     work_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc)
     date_str = now.strftime("%Y-%m-%d")
     suffix = f"_{article_id}" if article_id else ""
-    # Ensure unique filename
     base_name = f"{output_type}_{date_str}{suffix}.md"
     out_path = work_dir / base_name
 
-    # If file exists, append a counter
     counter = 1
     while out_path.exists():
         base_name = f"{output_type}_{date_str}{suffix}_{counter}.md"
@@ -951,14 +951,11 @@ def save_work_output(
     out_path.write_text(content, encoding="utf-8")
     rel_path = f"work/{base_name}"
 
-    return json.dumps(
-        {
-            "status": "saved",
-            "file": rel_path,
-            "output_type": output_type,
-            "article_id": article_id,
-            "date": date_str,
-        },
+    return SavedOutput(
+        output_type=output_type,
+        path=rel_path,
+        date=date_str,
+        article_id=article_id,
     )
 
 

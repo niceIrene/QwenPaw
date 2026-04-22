@@ -38,6 +38,10 @@ These are meaningful protections. They are also not bulletproof. Pattern-based d
 
 The cost and safety concerns are real, but they should not obscure what makes these agents genuinely useful: they can manage a workspace on your behalf and use scheduled jobs to keep it up to date — work that compounds over time without requiring your attention.
 
+[![Copilot Digest — walkthrough](https://img.youtube.com/vi/JxaHM2HpDZo/maxresdefault.jpg)](https://youtu.be/JxaHM2HpDZo)
+
+*A short walkthrough of Copilot Digest running through Claude.ai as an MCP connector.*
+
 To put this into practice, I built an assistant called **Copilot Digest** ([source](https://github.com/niceIrene/QwenPaw/tree/yin/copilot-digest)) on top of QwenPaw — think of it as a personalized knowledge podcaster that helps you digest what matters and stay up to date during dead time like commutes, walks, or chores. It ingests papers, articles, blog posts, and news you do not have time to read, then organizes, ranks, and summarizes them into a local knowledge base. You can browse a reading list, get ranked briefings ("what is new this week?"), read full article summaries, discuss specific papers in depth, capture notes and action items, and export compiled reports. Everything is stored as files on your machine — a workspace directory with an index, article summaries, work outputs, and exports.
 
 With a cron job pointed at your RSS feeds or saved links, the knowledge base grows while you sleep. The agent does the reading, summarizing, and filing; you show up and ask what is new. This is the kind of task personal agents are built for — persistent, background work that a chat interface simply cannot do.
@@ -77,6 +81,7 @@ I think there is a more general lesson here about how AI assistants should be pr
 
 **It scales beyond channels.** QwenPaw's channel system — DingTalk, Discord, Telegram, etc. — is powerful, but each integration carries its own authentication flow, message format, and platform-specific quirks. MCP flips this: expose a set of tools once, and any compatible host can consume them — whether that's a chat client, a mobile app, or a website that wants to embed your assistant's capabilities directly. The integration burden shifts from you to the host. More importantly, MCP lets you selectively expose capabilities: spin up a narrowly scoped connector that surfaces only your reading list and briefings — no shell access, no file writes — and hand that URL to anyone. One assistant, multiple connectors, each tailored to its audience. Channels broadcast to everyone the same way; MCP connectors can be surgical.
 
+**Providers can ship a real assistant, not a chatbot.** Because the integration is so lightweight, online services can host a real agent in their backend — with their data, their domain logic, and MCP-level tool safety controls — and expose it as a connector their users plug into whatever host they already use, including an embedded widget on the service's own page. Think of a company like Redfin: today they ship a chatbot bolted onto a search page, but with MCP they could instead expose a proper assistant that plans a house hunt across listings, comps, price history, and tour scheduling — consumable from Claude, an IDE, or right inside the site itself. The heavy work stays server-side; only the chosen tools are exposed. 
 
 ### Limitations
 
