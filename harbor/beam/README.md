@@ -10,6 +10,49 @@ The QwenPaw runner imports the full chat into Scroll history once, asks every
 probe in an isolated session, checkpoints `answers.json` after each probe, and
 writes per-probe traces and token/recall metrics to Harbor's agent logs.
 
+## What was adapted
+
+This integration does not change the semantics of the regular
+`qwenpaw task -i` command. It adds a purpose-built Harbor/BEAM evaluation path:
+
+- `benchmark_adapters/qwenpaw_beam_agent.py` is the custom installed-agent
+  adapter on the Harbor host. It copies the wheel built from the current
+  checkout into the task container, preserves its valid wheel filename,
+  installs it, initializes an isolated workspace, bridges Harbor's
+  `provider/model` and API credentials, and starts the BEAM runner.
+- `src/qwenpaw/evals/beam_runner.py` streams the large `chat.json` into Scroll's
+  `history.db` and then executes 20 probes. Ingestion bypasses ReMe
+  summarization and does not generate headlines. Every probe uses a distinct
+  session, so its answer and tool context do not enter the next probe.
+- Imported rows use the dedicated `kind="beam_chat_turn"`. Probe prompts require
+  recall to filter on that kind, preventing questions, answers, or tool results
+  from earlier probes in the shared database from becoming BEAM evidence.
+- `benchmark_adapters/beam_judge.py` provides official-compatible scoring. It
+  assigns `0/0.5/1` per rubric criterion and aggregates by question and
+  ability; event ordering uses semantic alignment and normalized Kendall tau;
+  the Harbor reward is the macro mean of all ten ability scores.
+- `harbor/beam/10M-1` through `10M-10` package the ten conversations as Harbor
+  1.3 tasks. `environment/` contains agent-visible input, `tests/` contains the
+  verifier rubric and entry point, and `solution/` is used only for the Oracle
+  contract check.
+- `tests/unit/evals/` covers streaming JSON, history ingestion, probe isolation,
+  judge parsing, rubric aggregation, and event-ordering calculations.
+
+The complete execution path is:
+
+```text
+Harbor trial
+  → install the current QwenPaw wheel
+  → stream one BEAM conversation into Scroll
+  → answer 20 probes sequentially in isolated sessions
+  → checkpoint answers, metrics, and per-probe traces
+  → run the LLM verifier and write reward/scores
+```
+
+Parallelism is applied across independent Harbor trials and rubric-judge calls.
+The 20 probes within one task remain sequential to avoid contention in the
+shared workspace, runtime, and SQLite database.
+
 ## 1. Prerequisites
 
 - Python 3.11–3.13 for QwenPaw

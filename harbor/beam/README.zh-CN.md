@@ -9,6 +9,45 @@
 因此 Harbor adapter 会调用专用的 `qwenpaw.evals.beam_runner`。底层仍然使用
 真实的 QwenPaw workspace、模型 provider、Scroll history 和 recall 工具。
 
+## 代码适配了什么
+
+这套集成没有修改普通 `qwenpaw task -i` 的执行语义，而是新增了一条专门的
+Harbor/BEAM 评测路径：
+
+- `benchmark_adapters/qwenpaw_beam_agent.py` 是 Harbor host 侧的自定义
+  installed-agent adapter。它把当前 checkout 构建的 QwenPaw wheel 复制进
+  task 容器，保留合法 wheel 文件名完成安装，初始化隔离 workspace，桥接
+  Harbor 的 `provider/model` 与 API key，然后启动 BEAM runner。
+- `src/qwenpaw/evals/beam_runner.py` 流式读取大体积 `chat.json`，把原始消息
+  直接写入 Scroll `history.db`，再执行 20 个 probe。注入不经过 ReMe
+  summarize，也不会主动生成 headline；每个 probe 使用独立 session，答案
+  和工具 context 不会进入后续 probe。
+- runner 给导入行设置专用 `kind="beam_chat_turn"`。probe 被明确要求只检索
+  这种历史行，因此之前 probe 写入同一数据库的问题、回答和工具结果不会被
+  当成 BEAM 原始证据召回。
+- `benchmark_adapters/beam_judge.py` 实现官方兼容评分：逐 rubric criterion
+  产生 `0/0.5/1` 分，按 question 和 ability 聚合；`event_ordering` 使用语义
+  对齐与归一化 Kendall tau；Harbor reward 是 10 个 ability 分数的宏平均。
+- `harbor/beam/10M-1` 到 `10M-10` 把十份对话封装为 Harbor 1.3 task。
+  `environment/` 是 agent 可见输入，`tests/` 是 verifier rubric 和评分入口，
+  `solution/` 只用于 Oracle contract 检查。
+- `tests/unit/evals/` 覆盖流式 JSON、历史注入、probe 隔离、Judge 解析、
+  rubric 聚合和 event ordering 计算。
+
+完整执行链路是：
+
+```text
+Harbor trial
+  → 安装当前 QwenPaw wheel
+  → 流式导入一份 BEAM 长对话到 Scroll
+  → 在 20 个隔离 session 中串行回答 probe
+  → checkpoint answers、metrics 和逐 probe trace
+  → verifier 调用 LLM Judge 并输出 reward/scores
+```
+
+并发发生在独立 Harbor trial 和 Judge rubric 请求层；单个 task 内的 20 个
+probe 保持串行，以避免共享 workspace/runtime/SQLite 的并发竞争。
+
 ## 1. 准备环境
 
 需要 Harbor、Docker、被测 QwenPaw 模型的 API key，以及一个独立的 judge
