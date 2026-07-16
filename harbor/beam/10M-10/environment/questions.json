@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "Could you provide the exact itinerary and schedule for the virtual tour of the Grand Wailea Resort?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What was discussed during the Zoom call with Pamela about travel logistics for her group of 15 friends?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Has Pamela ever helped coordinate with vendors or saved setup time during my events?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever coordinated with volunteers to assist with guest relocations?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different aspects of my beach wedding planning from July 1, 2023 to July 6, 2023, including venue options, guest capacities, permit fees, weather considerations, and accessibility concerns, in order? Mention ONLY and ONLY five items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different aspects of event setup and guest management from July 16, 2023 to August 4, 2023, in order? Mention ONLY and ONLY ten items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "How many chairs did I say I rented from Seaside Rentals?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How much did I say it costs to rent each lantern?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "What are the costs involved in the decorations for the event?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "What services are available for visitors during their stay?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How much do the 100 napkins cost with the discount I secured?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "How many members are on my team handling lighting fixes and guest concerns?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How much will I spend in total if I rent 10 wooden arches from Beachside Rentals and 10 from Ocean Breeze Rentals at their quoted prices?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How much did I spend in total on catering, and what percentage of guests rated the local cuisine highly across all sessions?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "How should I allocate my budget between flowers and lighting to create a cohesive look for the event?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "How should I organize the travel bookings for my group at Sandy Shore Bistro to get started?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize how my wedding décor plans have developed from July 1, 2023 to July 6, 2023, including how I've incorporated personal touches, managed the budget, and balanced different theme ideas?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you give me a summary of how the venue wrap-up and equipment return process developed throughout our planning, including how I coordinated with vendors and Ka'anapali staff to meet all deadlines and secure refunds?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days do I have to finalize the guest list and travel plans before the wedding event launch begins?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days after the start of closing our wedding at Ka'anapali Beach did my reflection period begin?"
+  }
+]

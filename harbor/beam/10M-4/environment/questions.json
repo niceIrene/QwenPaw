@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "Could you provide the detailed content or key sections of the design overview document I shared with my team about modularity benefits?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What was the outcome or feedback from the study group sessions with Rebecca and Kristy?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I ever formulated heat equation problems before?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever constructed a Green's function for the operator L = d²/dx² - k² on the interval [0,1]?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different aspects of Green's functions and related PDE solution methods from 2025-03-01 to 2025-03-31, in order? Mention ONLY and ONLY nine items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different aspects of my PDE preparation process from 2024-07-01 to 2024-07-27, in order? Mention ONLY and ONLY eleven items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "How long did I say it would take me to confirm the discriminant for that PDE?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How long did I say the video I watched on separation of variables was?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "How do I use Green's functions to solve a PDE?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "How do I use the 'plot' function in MATLAB?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How many problems from Section 14.3 on gradients have I solved correctly, and how much time did I spend on them?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "What score did I achieve on my ODE quiz after practicing 25 problems?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How many total problems did I practice across calculus, integration, and ODE sets based on my progress updates?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How many times did I work with Rebecca on solving heat or wave equations involving sine initial conditions across my sessions?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I'm planning how to organize my study sessions for the next few chapters. How would you suggest structuring my note-taking and review periods to make the most of my time?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "When preparing for upcoming exams, what strategies would you recommend to balance reading new material and revisiting summaries of previous chapters so that I can optimize my study flow?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize my learning journey and progress with Green's functions, including how my understanding and study habits evolved from 2025-03-01 to 2025-03-31?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you summarize my learning journey and progress with understanding the physical interpretations and solution methods of PDEs, including how I tackled different types, identified limitations of separation of variables, and approached non-separable cases from 2024-08-01 to 2024-10-22?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started intensifying my PDE preparation by targeting weak areas and when I began focusing on improving my note-taking and problem-solving methods?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days after I started learning the fundamental concepts of PDEs did I begin studying separation of variables and Fourier series?"
+  }
+]

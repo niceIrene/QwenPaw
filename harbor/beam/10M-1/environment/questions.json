@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What are the qualifications or expertise of Johnny, who collaborated during the code review for tuning logic?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What was the agenda or format of the knowledge sharing session where the pipeline design document was shared?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I set up diagnostic logs to capture shard distribution errors in my sharding implementation?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Do I usually include exact error messages when I ask about debugging strategies for vector lookups during dense search integration?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "How did my discussions about the development phases of our RAG system progress from 2024-08-01 to 2024-10-22 in order? Mention ONLY and ONLY twenty items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you reconstruct the sequence in which I brought up the various error types and their handling challenges from 2024-11-01 to 2025-01-21 in order? Mention ONLY and ONLY eleven items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "What detection rate and total number of test records did I mention when setting up logs to catch that specific error?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "What version of the vector database am I evaluating for indexing over 1 million documents?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "What improvements can I make to speed up the process of handling queries?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "What targets should I consider when planning to handle increased load on my system?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How many tasks have I logged in Jira for the sprint on 2024-11-05, and what is my sprint completion target percentage?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "How many tasks are logged in Jira for load balancing, and what is the sprint completion target percentage?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How many documents am I planning to handle in total when combining my Elasticsearch and Solr projects?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How many queries per second am I aiming to support across sharding, load balancing, and partitioning efforts combined?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I'm planning to estimate costs for running multiple cloud instances. How would you suggest structuring the calculation to handle different providers and instance counts?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I'm setting up a system to handle a large number of vector searches. How would you suggest structuring the indexing and search process to keep things running smoothly?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize my overall progress and key developments in improving my vector search and logging capabilities 2024-08-01 to 2024-10-22?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you summarize how my system architecture and performance optimization plans evolved from 2024-07-01 to 2024-07-29?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days are there between when I launch the testing suite development and when I start the deployment preparation for the RAG system?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started working on the context window management module and when I began developing the query rewriting pipelines for our RAG system?"
+  }
+]

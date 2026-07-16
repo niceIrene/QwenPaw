@@ -1,0 +1,122 @@
+{
+  "abstention": [
+    {
+      "id": "abstention-0",
+      "question": "Could you provide the exact itinerary and schedule for the virtual tour of the Grand Wailea Resort?",
+      "llm_response": "Based on the provided chat, there is no information related to the exact itinerary or schedule of the virtual tour of the Grand Wailea Resort."
+    },
+    {
+      "id": "abstention-1",
+      "question": "What was discussed during the Zoom call with Pamela about travel logistics for her group of 15 friends?",
+      "llm_response": "Based on the provided chat, there is no information related to the specific discussions during the Zoom call with Pamela."
+    }
+  ],
+  "contradiction_resolution": [
+    {
+      "id": "contradiction_resolution-0",
+      "question": "Has Pamela ever helped coordinate with vendors or saved setup time during my events?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said Pamela has never helped coordinate with vendors or saved any setup time, but you also mentioned that she arrived to help coordinate with vendors and saved you 3 hours of work. Which statement is correct?"
+    },
+    {
+      "id": "contradiction_resolution-1",
+      "question": "Have I ever coordinated with volunteers to assist with guest relocations?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said that Pamela rallied volunteers to help with guest relocations, but you also mentioned that you have never coordinated with any volunteers for this task. Could you clarify which is correct?"
+    }
+  ],
+  "event_ordering": [
+    {
+      "id": "event_ordering-0",
+      "question": "Can you walk me through the order in which I brought up different aspects of my beach wedding planning from July 1, 2023 to July 6, 2023, including venue options, guest capacities, permit fees, weather considerations, and accessibility concerns, in order? Mention ONLY and ONLY five items.",
+      "llm_response": "You mentioned these aspects in the following order: 1) Initial research on beach destinations with ideal weather and temperature ranges\n2) Discussion of specific venue options and their guest capacities\n3) Exploration of beach wedding permit fees and application processes across locations\n4) Consideration of weather-related factors and backup plans\n5) Evaluation of accessibility and logistical concerns for guests."
+    },
+    {
+      "id": "event_ordering-1",
+      "question": "Can you walk me through the order in which I brought up different aspects of event setup and guest management from July 16, 2023 to August 4, 2023, in order? Mention ONLY and ONLY ten items.",
+      "llm_response": "You mentioned the aspects in this order: 1) Adjusting the lighting setup to save power\n2) Addressing delays in music timing and playlist adjustments\n3) Managing guest seating and complaints by adding extra chairs\n4) Preparing for weather concerns by moving guests under a tent\n5) Troubleshooting video glitches by repositioning cameras\n6) Handling last-minute menu changes to accommodate dietary needs\n7) Flagging potential delays in toasts and trimming speeches\n8) Noticing guest comfort issues related to heat and adding fans and water bottles\n9) Softening lights to create a warmer evening vibe\n10) Introducing fun activities like a quick dance game and limbo contest to energize the crowd."
+    }
+  ],
+  "information_extraction": [
+    {
+      "id": "information_extraction-0",
+      "question": "How many chairs did I say I rented from Seaside Rentals?",
+      "llm_response": "You said you rented 100 chairs from Seaside Rentals."
+    },
+    {
+      "id": "information_extraction-1",
+      "question": "How much did I say it costs to rent each lantern?",
+      "llm_response": "You said it costs $10 to rent each lantern."
+    }
+  ],
+  "instruction_following": [
+    {
+      "id": "instruction_following-0",
+      "question": "What are the costs involved in the decorations for the event?",
+      "llm_response": "Break decoration costs out by category and explicitly reserve the floral budget: for example, flowers $2,000, lighting $1,000, linens $500, and signage $300. Confirm that arrangements, bouquets, delivery, and setup all come from the $2,000 flower allocation."
+    },
+    {
+      "id": "instruction_following-1",
+      "question": "What services are available for visitors during their stay?",
+      "llm_response": "Visitors can receive booking assistance, itinerary and local-information help, transportation coordination, check-in guidance, accessibility support, and a contact for urgent issues during the stay. Provide the service hours and phone number with each booking."
+    }
+  ],
+  "knowledge_update": [
+    {
+      "id": "knowledge_update-0",
+      "question": "How much do the 100 napkins cost with the discount I secured?",
+      "llm_response": "$120 for 100 pieces"
+    },
+    {
+      "id": "knowledge_update-1",
+      "question": "How many members are on my team handling lighting fixes and guest concerns?",
+      "llm_response": "There are 8 members on the team."
+    }
+  ],
+  "multi_session_reasoning": [
+    {
+      "id": "multi_session_reasoning-0",
+      "question": "How much will I spend in total if I rent 10 wooden arches from Beachside Rentals and 10 from Ocean Breeze Rentals at their quoted prices?",
+      "llm_response": "You will spend $1,000 in total: $500 for 10 arches from Beachside Rentals at $50 each, and $500 for 10 arches from Ocean Breeze Rentals at $50 each."
+    },
+    {
+      "id": "multi_session_reasoning-1",
+      "question": "How much did I spend in total on catering, and what percentage of guests rated the local cuisine highly across all sessions?",
+      "llm_response": "You spent a total of $10,000 on catering, with between 85% and 90% of guests rating the local cuisine highly."
+    }
+  ],
+  "preference_following": [
+    {
+      "id": "preference_following-0",
+      "question": "How should I allocate my budget between flowers and lighting to create a cohesive look for the event?",
+      "llm_response": "Use an approximately 2:1 split: allocate about two-thirds of the combined budget to flowers and one-third to lighting. For example, spend $2,000 on focal floral arrangements and $1,000 on warm uplights or string lights that support the flowers without competing with them."
+    },
+    {
+      "id": "preference_following-1",
+      "question": "How should I organize the travel bookings for my group at Sandy Shore Bistro to get started?",
+      "llm_response": "Use a phased booking plan. Start by confirming travel and rooms for the 20 key relatives connected with the Sandy Shore Bistro group, lock their shared dates and transport first, and only then open the second booking wave for the remaining guests."
+    }
+  ],
+  "summarization": [
+    {
+      "id": "summarization-0",
+      "question": "Can you summarize how my wedding décor plans have developed from July 1, 2023 to July 6, 2023, including how I've incorporated personal touches, managed the budget, and balanced different theme ideas?",
+      "llm_response": "Your wedding décor planning has evolved through thoughtful integration of personal and family elements, budget management, and theme balancing. Initially, you focused on incorporating sentimental items like Laura's lace and family photos to add emotional depth. As the planning progressed, you prioritized key décor elements such as flowers, lighting, and custom artisan pieces while adjusting your budget to accommodate these priorities. You also worked on blending your preference for a minimalist 'Coastal Serenity' theme with Tracy's desire for decorative accents like starfish and coral hints, leading to a balanced color palette and cohesive design. Throughout, you incorporated eco-friendly choices, including recycled cotton napkins and solar-powered lighting, ensuring sustainability aligned with your aesthetic. Your approach reflects a progression from establishing meaningful personal touches to practical budgeting and theme harmonization, resulting in a well-rounded and heartfelt wedding décor plan."
+    },
+    {
+      "id": "summarization-1",
+      "question": "Can you give me a summary of how the venue wrap-up and equipment return process developed throughout our planning, including how I coordinated with vendors and Ka'anapali staff to meet all deadlines and secure refunds?",
+      "llm_response": "Throughout the planning and execution of the venue wrap-up and equipment return, you progressively coordinated with Ka'anapali staff and multiple vendors to ensure all tasks were completed efficiently and within deadlines. Initially, you established clear communication with Ka'anapali staff to define cleanup standards, such as clearing specific beach areas to meet refund criteria. You then organized the return of various rented equipment, prioritizing items with earlier deadlines and higher late fees, like lanterns and tables, while scheduling tasks to avoid overtime fees. You also managed waste disposal responsibly, engaging services like Green Maui and Island Cleanup, balancing cost with environmental impact. Throughout, you documented all processes meticulously, including inspections and returns, to provide evidence for refunds and compliance. Regular follow-ups and contingency plans were implemented to address any issues promptly, ensuring smooth vendor exits and final venue restoration. This comprehensive approach allowed you to secure multiple refunds, avoid penalties, and maintain positive relationships with vendors and venue staff."
+    }
+  ],
+  "temporal_reasoning": [
+    {
+      "id": "temporal_reasoning-0",
+      "question": "How many days do I have to finalize the guest list and travel plans before the wedding event launch begins?",
+      "llm_response": "There are 3 days between when I start finalizing the guest list and travel plans on July 7 and when the wedding event launch begins on July 10."
+    },
+    {
+      "id": "temporal_reasoning-1",
+      "question": "How many days after the start of closing our wedding at Ka'anapali Beach did my reflection period begin?",
+      "llm_response": "The reflection period began 10 days after the start of closing the wedding at Ka'anapali Beach."
+    }
+  ]
+}

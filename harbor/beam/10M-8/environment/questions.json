@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What specific maintenance steps did I learn from the YouTube videos about checking oil levels?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "Could you provide details about the local fair near Normal on I-55, such as the types of food stalls or events featured?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I driven hybrid vehicles before?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I sent any messages to my mom during this trip?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different personal feelings and concerns about my road trip from May 1, 2022 to October 3, 2022, in order? Mention ONLY and ONLY eight items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different aspects of my transportation and navigation plans from January 2, 2023 to March 10, 2023, in order? Mention ONLY and ONLY five items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "When I called KOA Flagstaff to check on the tent space, how much area did they confirm was available for our setup?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "What wait time did I mention for the ride when using the app?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "Can you update me on the current status of my budget?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "When can I expect someone to come out for help with my vehicle?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "What is the total amount I should expect to pay on my final bill at the Holiday Inn, including any minibar charges?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "How many photos have I tagged for my blog header?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How many hours in total did I spend at the Grand Canyon during my trip, combining all my stops and hikes?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How much have I allocated in total for event-related expenses across my budgets for flyers, venue fees, and snacks?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I'm planning the route for our upcoming trip. How would you suggest I map it out?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I'm trying to decide which vehicle to focus on for my daily commute. What should I keep in mind when comparing different models?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you give me a summary of how Chris and I planned and managed our accommodations, travel logistics, and daily routines throughout our road trip preparations from January 2, 2023 to March 10, 2023?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you summarize how my travel decisions and habits evolved from April 8, 2023 to April 25, 2023 and how they influenced my overall experience and personal growth?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started the final preparations for our road trip and when we actually began the trip?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started the final stretch of our road trip at Motel 6 in Culver City and when I got back home to New Jeffreytown and began unpacking?"
+  }
+]

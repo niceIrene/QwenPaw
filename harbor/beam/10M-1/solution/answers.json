@@ -1,0 +1,122 @@
+{
+  "abstention": [
+    {
+      "id": "abstention-0",
+      "question": "What are the qualifications or expertise of Johnny, who collaborated during the code review for tuning logic?",
+      "llm_response": "Based on the provided chat, there is no information related to Johnny's qualifications or expertise."
+    },
+    {
+      "id": "abstention-1",
+      "question": "What was the agenda or format of the knowledge sharing session where the pipeline design document was shared?",
+      "llm_response": "Based on the provided chat, there is no information related to the agenda or format of the knowledge sharing session."
+    }
+  ],
+  "contradiction_resolution": [
+    {
+      "id": "contradiction_resolution-0",
+      "question": "Have I set up diagnostic logs to capture shard distribution errors in my sharding implementation?",
+      "llm_response": "I noticed that there are conflicting statements regarding this. In some instances, you mentioned setting up diagnostic logs for shard distribution errors, while in others, you said you've never set up such logs. Could you clarify which is correct?"
+    },
+    {
+      "id": "contradiction_resolution-1",
+      "question": "Do I usually include exact error messages when I ask about debugging strategies for vector lookups during dense search integration?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said that exact error messages are always included when discussing debugging strategies, but you also mentioned never having logged errors for vector lookups during dense search integration. Could you clarify which is correct?"
+    }
+  ],
+  "event_ordering": [
+    {
+      "id": "event_ordering-0",
+      "question": "How did my discussions about the development phases of our RAG system progress from 2024-08-01 to 2024-10-22 in order? Mention ONLY and ONLY twenty items.",
+      "llm_response": "Your discussions about the RAG system development phases progressed as follows: 1) Initiating the core ingestion pipeline foundation\n2) Evaluating batch versus streaming ingestion strategies\n3) Addressing metadata extraction and normalization challenges\n4) Implementing initial vectorization and indexing workflows\n5) Setting up vector database clusters\n6) Building basic sparse retrieval indexes\n7) Developing core API scaffolding for ingestion and retrieval\n8) Integrating authentication and authorization into APIs\n9) Establishing logging and monitoring foundations\n10) Applying infrastructure as code for environment reproducibility\n11) Prototyping hybrid sparse-dense retrieval approaches\n12) Integrating dense vector search with approximate nearest neighbors\n13) Combining retrieval scores for hybrid ranking\n14) Prototyping query pipelines with hybrid retrieval\n15) Implementing query rewriting for improved recall\n16) Conducting initial evaluation metrics and relevance testing\n17) Extending APIs for hybrid search queries\n18) Handling multi-language tokenization\n19) Implementing caching strategies for frequent queries\n20) Finalizing logging of query performance and errors."
+    },
+    {
+      "id": "event_ordering-1",
+      "question": "Can you reconstruct the sequence in which I brought up the various error types and their handling challenges from 2024-11-01 to 2025-01-21 in order? Mention ONLY and ONLY eleven items.",
+      "llm_response": "You mentioned the different error types and their handling challenges in this sequence: 1) Issues related to token limits and query segmentation\n2) Problems with context window resizing and size mismatches\n3) Difficulties encountered during indexing and scoring\n4) Challenges in reranking and feedback parsing\n5) Version conflicts during model saving\n6) Errors in evaluation metrics and spelling correction\n7) Encryption key management and documentation formatting errors\n8) Query parsing and synonym expansion issues\n9) Intent reformulation and encoding mismatches\n10) Language detection and vector alignment errors\n11) Stemming rule failures, relevance scoring problems, and code switching errors."
+    }
+  ],
+  "information_extraction": [
+    {
+      "id": "information_extraction-0",
+      "question": "What detection rate and total number of test records did I mention when setting up logs to catch that specific error?",
+      "llm_response": "You mentioned targeting a 98% detection rate across 10,000 test records."
+    },
+    {
+      "id": "information_extraction-1",
+      "question": "What version of the vector database am I evaluating for indexing over 1 million documents?",
+      "llm_response": "Milvus 2.3.1"
+    }
+  ],
+  "instruction_following": [
+    {
+      "id": "instruction_following-0",
+      "question": "What improvements can I make to speed up the process of handling queries?",
+      "llm_response": "Start by measuring p50, p95, and p99 query latency. For example, if p95 is currently 420 ms, add batching, cache repeated lookups, reuse connections, and profile the slowest retrieval stage; then verify that p95 falls below 200 ms and report the before/after timing for every change."
+    },
+    {
+      "id": "instruction_following-1",
+      "question": "What targets should I consider when planning to handle increased load on my system?",
+      "llm_response": "At the projected peak load, set explicit service-level targets such as p50 below 100 ms, p95 below 200 ms, and p99 below 400 ms, with fewer than 1% errors. Load-test at 1.5 times the expected traffic and add capacity before p95 exceeds 200 ms."
+    }
+  ],
+  "knowledge_update": [
+    {
+      "id": "knowledge_update-0",
+      "question": "How many tasks have I logged in Jira for the sprint on 2024-11-05, and what is my sprint completion target percentage?",
+      "llm_response": "There are 17 tasks logged in Jira, with a sprint completion target of 88%."
+    },
+    {
+      "id": "knowledge_update-1",
+      "question": "How many tasks are logged in Jira for load balancing, and what is the sprint completion target percentage?",
+      "llm_response": "There are 14 tasks logged for load balancing, with a sprint completion target of 85%."
+    }
+  ],
+  "multi_session_reasoning": [
+    {
+      "id": "multi_session_reasoning-0",
+      "question": "How many documents am I planning to handle in total when combining my Elasticsearch and Solr projects?",
+      "llm_response": "1.8 million documents"
+    },
+    {
+      "id": "multi_session_reasoning-1",
+      "question": "How many queries per second am I aiming to support across sharding, load balancing, and partitioning efforts combined?",
+      "llm_response": "5,000 queries per second"
+    }
+  ],
+  "preference_following": [
+    {
+      "id": "preference_following-0",
+      "question": "I'm planning to estimate costs for running multiple cloud instances. How would you suggest structuring the calculation to handle different providers and instance counts?",
+      "llm_response": "Use a parameterized table with provider, hourly instance price, instance count, hours, and discounts. For AWS EC2 at $0.11 per hour for 500 instances, the baseline is $0.11 × 500 = $55 per hour, or $1,320 for 24 hours. Apply the same formula to each provider and then add storage, network, and support costs."
+    },
+    {
+      "id": "preference_following-1",
+      "question": "I'm setting up a system to handle a large number of vector searches. How would you suggest structuring the indexing and search process to keep things running smoothly?",
+      "llm_response": "With Milvus 2.3.0 and roughly 2 million vectors, partition by tenant or time range, use multiple shards, and build an HNSW or IVF_FLAT index with parameters tuned on a recall-versus-latency test set. Batch inserts, compact segments off-peak, load hot collections into memory, and monitor p95 search latency so it remains near the 200 ms target."
+    }
+  ],
+  "summarization": [
+    {
+      "id": "summarization-0",
+      "question": "Can you summarize my overall progress and key developments in improving my vector search and logging capabilities 2024-08-01 to 2024-10-22?",
+      "llm_response": "Throughout your learning journey, you progressively enhanced your understanding and implementation of vector search and logging systems. Initially, you explored various vector indexing strategies, weighing their trade-offs in terms of accuracy, speed, and scalability. You then integrated vector search techniques with log aggregation tools, focusing on efficient querying and real-time data handling. Subsequently, you designed a high-availability architecture combining Elasticsearch and Faiss to meet demanding query volumes and uptime requirements. Alongside, you refined your API design to support vector search operations effectively. Finally, you incorporated monitoring and alerting mechanisms to ensure system reliability and performance, demonstrating a comprehensive development from foundational concepts to practical, scalable solutions."
+    },
+    {
+      "id": "summarization-1",
+      "question": "Can you summarize how my system architecture and performance optimization plans evolved from 2024-07-01 to 2024-07-29?",
+      "llm_response": "Your system architecture and performance optimization plans progressed through several stages. Initially, you focused on designing a modular system capable of handling high daily query volumes with strict response time and uptime requirements, considering load balancing and caching strategies. Subsequently, you explored advanced load balancing algorithms and health check implementations to ensure high availability and efficient traffic distribution. You then incorporated distributed caching solutions like Redis Cluster to enhance scalability and fault tolerance. Later, you integrated microservices architecture with container orchestration and message queues to improve modularity and inter-service communication. Throughout these discussions, you refined deployment strategies, CI/CD pipeline configurations, and monitoring setups to maintain high deployment success rates and system reliability, culminating in a comprehensive, scalable, and resilient system design."
+    }
+  ],
+  "temporal_reasoning": [
+    {
+      "id": "temporal_reasoning-0",
+      "question": "How many days are there between when I launch the testing suite development and when I start the deployment preparation for the RAG system?",
+      "llm_response": "There are 14 days between launching the testing suite development on February 15 and starting the deployment preparation on March 1."
+    },
+    {
+      "id": "temporal_reasoning-1",
+      "question": "How many days passed between when I started working on the context window management module and when I began developing the query rewriting pipelines for our RAG system?",
+      "llm_response": "45 days passed between starting the context window management module on November 1, 2024, and beginning the development of query rewriting pipelines on December 16, 2024."
+    }
+  ]
+}

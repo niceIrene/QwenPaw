@@ -1,0 +1,122 @@
+{
+  "abstention": [
+    {
+      "id": "abstention-0",
+      "question": "Can you share the specific advice Samuel gave about savings strategies ",
+      "llm_response": "Based on the provided chat, there is no information related to the specific advice Samuel gave about savings strategies."
+    },
+    {
+      "id": "abstention-1",
+      "question": "Could you share the key points from the free YouTube pottery tutorial I watched?",
+      "llm_response": "Based on the provided chat, there is no information related to the key points of the YouTube pottery tutorial you watched."
+    }
+  ],
+  "contradiction_resolution": [
+    {
+      "id": "contradiction_resolution-0",
+      "question": "Have I ever moved my old couch to storage?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said you are considering moving your old couch to storage instead of selling it, but you also mentioned that you have never moved your old couch to storage. Which statement is correct?"
+    },
+    {
+      "id": "contradiction_resolution-1",
+      "question": "Have I ever signed up for any community volunteering events before?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said you have never signed up for any community volunteering events, but you also referred to signing up online for a food drive. Could you clarify which is correct?"
+    }
+  ],
+  "event_ordering": [
+    {
+      "id": "event_ordering-0",
+      "question": "Can you walk me through the order in which I brought up different aspects of my relationship and shared activities with Jenna from May 1, 2022 to August 27, 2022, in order? Mention ONLY and ONLY eight items.",
+      "llm_response": "You mentioned aspects of your relationship and shared activities with Jenna in this order: 1) Discussing pottery classes and planning to join together\n2) Jenna offering to drive you to the pottery studio and her supportive role\n3) Jenna's encouragement and morale boosts during your pottery progress\n4) Jenna photographing your pottery work and the impact on your confidence\n5) Brainstorming and planning a coastal trip together\n6) Booking accommodations and shared travel preparations\n7) Experiencing and enjoying various moments during the trip including tours, walks, and shared memories\n8) Reviewing trip photos and reflecting on nostalgia and future plans."
+    },
+    {
+      "id": "event_ordering-1",
+      "question": "Can you walk me through the order in which I brought up different aspects of my fitness and financial discussions with Jenna from May 3, 2021 to September 7, 2021, in order? Mention ONLY and ONLY ten items.",
+      "llm_response": "You mentioned these aspects in this order: 1) Jenna noticing my renewed focus and discussing workout ideas over coffee at home\n2) Going on a weekend walk together at Sunset Beach\n3) Planning and praising consistency over tea at home with upcoming hikes\n4) Hiking multiple distances at Reef Trail and bonding over fitness goals\n5) Running and planning runs at Coral Beach with increasing distances and goals\n6) Discussing budget and financial planning over coffee at Ocean View Lounge\n7) Supporting grocery budget caps and shopping together\n8) Celebrating savings and planning budget dates over tea and picnics\n9) Setting retirement goals and discussing investment plans over dinners and coffee\n10) Reviewing progress and insurance quotes while planning future financial steps."
+    }
+  ],
+  "information_extraction": [
+    {
+      "id": "information_extraction-0",
+      "question": "What time did I say I searched for flights on Skyscanner?",
+      "llm_response": "You said you searched for flights on Skyscanner at 8 PM."
+    },
+    {
+      "id": "information_extraction-1",
+      "question": "How much did I say dinner cost at the place where Jenna seemed distant?",
+      "llm_response": "You said dinner cost $40 at Sea Breeze Cafe last night."
+    }
+  ],
+  "instruction_following": [
+    {
+      "id": "instruction_following-0",
+      "question": "What are some good options I can use to improve my health?",
+      "llm_response": "Useful options include MyFitnessPal Premium at about $20/month, Headspace at roughly $70/year, Strava at about $80/year, and the free versions of Google Fit or Apple Health. Choose one nutrition, one activity, and one mindfulness tool instead of paying for overlapping apps."
+    },
+    {
+      "id": "instruction_following-1",
+      "question": "What are some healthy options I can consider for my meals?",
+      "llm_response": "A sample healthy weekly meal budget is: vegetables and fruit $30, whole grains $12, beans and lentils $8, eggs and yogurt $15, lean protein $25, and healthy snacks $10. That is an itemized total of $100, which you can adjust by category."
+    }
+  ],
+  "knowledge_update": [
+    {
+      "id": "knowledge_update-0",
+      "question": "What time do I set aside for my Saturday budget review sessions?",
+      "llm_response": "5 PM"
+    },
+    {
+      "id": "knowledge_update-1",
+      "question": "When is the desk assembly scheduled to take place?",
+      "llm_response": "The desk assembly is scheduled for the afternoon of November 7 to accommodate a delivery delay."
+    }
+  ],
+  "multi_session_reasoning": [
+    {
+      "id": "multi_session_reasoning-0",
+      "question": "How much of my $50 date budget have I spent on the movie and picnic combined, and how much do I have left?",
+      "llm_response": "You have spent $30 in total ($15 on the movie and $15 on the picnic), leaving you with $20 remaining."
+    },
+    {
+      "id": "multi_session_reasoning-1",
+      "question": "How many ideas have I shared at the philosophy club across meetings from May 1, 2022 to August 27, 2022?",
+      "llm_response": "14 ideas"
+    }
+  ],
+  "preference_following": [
+    {
+      "id": "preference_following-0",
+      "question": "What should I keep in mind when planning my workout schedule around different times of the day near Palm Street?",
+      "llm_response": "Schedule the workout in the morning near Palm Street, when the streets are quieter and temperatures are usually lower. Check traffic around school or commute peaks, use visible clothing, and choose a well-lit route; I would avoid an evening workout for this plan."
+    },
+    {
+      "id": "preference_following-1",
+      "question": "I'm planning to update the lighting in my living room. What kind of bulbs would you suggest I use?",
+      "llm_response": "Use the $30 warm-white LED bulbs, ideally 2700K–3000K and dimmable, for a soft living-room ambiance. Layer them with a floor or table lamp and avoid harsh fluorescent bulbs or cool blue-white lighting."
+    }
+  ],
+  "summarization": [
+    {
+      "id": "summarization-0",
+      "question": "Can you summarize how I've been managing my work-life balance and personal time from March 5, 2020 to March 30, 2021?",
+      "llm_response": "Over the course of our discussions, you've progressively worked towards achieving a healthier work-life balance by consistently maintaining a 43-44 hour workweek, which allowed you to free up time for personal activities. Initially, you focused on reducing work stress by using tools like the Calm app and implementing strategies such as setting boundaries and prioritizing tasks. You then incorporated regular personal and social activities, including art nights, workouts, trivia, hiking, and quality time with Jenna and family, to strengthen relationships and improve relaxation. Throughout, you emphasized planning and scheduling personal time as non-negotiable, using time-blocking and effective task management to protect this time. You also developed strategies to maintain this balance long-term, such as delegating tasks, reflecting regularly, and communicating openly with loved ones and colleagues. This ongoing effort reflects a clear progression from managing stress to actively cultivating meaningful personal time alongside professional responsibilities."
+    },
+    {
+      "id": "summarization-1",
+      "question": "Can you summarize how Jenna and I have developed our fitness and financial routines together from May 3, 2021 to September 7, 2021?",
+      "llm_response": "Over the course of your conversations, you and Jenna have progressively built a supportive and engaging partnership focused on both fitness and financial goals. Initially, you discussed workout ideas and established a regular schedule that included varied activities like jogging, hiking, yoga, and strength training, turning workouts into enjoyable date experiences. Jenna's encouragement and participation helped maintain motivation, and you both planned hikes and runs at local spots such as Reef Trail and Coral Beach, gradually increasing distance and intensity. On the financial side, you began with budget discussions over coffee, setting spending limits and celebrating savings milestones with budget-friendly outings like picnics. You established regular financial check-ins, shared budgeting responsibilities, and set joint goals including building an emergency fund and planning for retirement. Throughout, you maintained open communication, involved Jenna in decision-making, and balanced celebrating progress with maintaining discipline. This evolving collaboration strengthened your relationship and created a foundation for sustained health and financial well-being."
+    }
+  ],
+  "temporal_reasoning": [
+    {
+      "id": "temporal_reasoning-0",
+      "question": "How many months passed between my teaching feedback review and when I started reflecting on my personal relationships?",
+      "llm_response": "10 months passed between the teaching feedback review on April 1, 2020, and starting to reflect on personal relationships on February 1, 2021."
+    },
+    {
+      "id": "temporal_reasoning-1",
+      "question": "How many days were there between when I started exploring new educational interests and when I began planning my travel for a mental recharge?",
+      "llm_response": "There were 92 days between starting my journey to explore new educational interests on May 1, 2022, and beginning to plan my travel for mental recharge on August 1, 2022."
+    }
+  ]
+}

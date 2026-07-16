@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What feedback did Brian give during the 15-minute folk piece practice in the Shell Avenue living room?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What specific techniques did John suggest during the 10-minute critique session at Harmony Hub?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I ever adjusted my chair height to help prevent wrist strain during my practice sessions?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever joined any violin-related groups on Reddit?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different ideas about incorporating my musical interests into university events and lectures from January 1, 2021 to February 25, 2021, in order? Mention ONLY and ONLY seven items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different ways my family and tutor have supported my ukulele practice from March 1, 2021 to April 24, 2021, in order? Mention ONLY and ONLY six items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "How many business cards did I order from Vistaprint and what was the total cost?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How much did I say I paid for the SD card I got from TechMart?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "How can I get started with keeping a journal?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "What options do you recommend for accessories to go with my instrument?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How much time do I dedicate to my morning rhythm variation drills?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "How long is my open mic performance slot at Coral Bay Club?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How many $30 sessions with John have I mentioned attending or planning to attend so far?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How have my incremental changes to morning and evening practice durations combined with my goals for rhythm and performance accuracy influenced my overall practice efficiency and progress towards mastering complex songs?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "What should I keep in mind when choosing a ukulele for different playing styles?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I'm planning how to allocate my budget for improving my skills and gear. How would you suggest I divide my spending?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize how my collaborations and interactions with my peers and mentors have developed from November 1, 2021 to December 27, 2021 and influenced my musical growth?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you provide a detailed summary of my overall progress and experiences with my ukulele practice and mentorship, capturing how various sessions, feedback, and resources have influenced my development and preparation from September 1, 2021 to October 28, 2021?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started preparing for my ukulele journey and when I began my first active practice session?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I was exploring performance opportunities with my ukulele and when I started journaling about my ukulele journey?"
+  }
+]

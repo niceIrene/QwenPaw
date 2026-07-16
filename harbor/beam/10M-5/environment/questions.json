@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What motivated my choice to focus on geometric interpretations when studying normed spaces?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "Can you tell me more about Devin's background and expertise in spectral theory?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I ever discussed norm properties with Devin or anyone else before?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever discussed self-adjoint operator extensions with Devin?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different foundational and advanced concepts in Functional Analysis from 2024-08-01 to 2024-10-22, in order? Mention ONLY and ONLY twenty items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different key concepts related to linear operators and their properties from 2024-11-01 to 2025-01-21, in order? Mention ONLY and ONLY twenty items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "Which version of the tokenization library am I using in my implementation?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How long did I say I spent computing the norm using SageMath?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "Can you help me prove that the sequence defined by x_n = 1/n approaches zero?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "How does the Fredholm alternative help determine the solvability of linear equations?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How many questions did I answer correctly on my initial quiz about linear operator definitions?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "What score did I achieve on my quiz about the parallelogram law following my additional study time?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How many total minutes did Devin and I spend discussing vector addition from 2024-07-01 till 2024-07-31"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "Across my quizzes on vector spaces, norm properties, and completeness, how many questions did I miss in total on topics related to axioms, metric axioms, and Hilbert criteria?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I’m planning to enroll in an online course to improve my problem-solving skills. Which platform would you recommend I go with?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I want to pick an online course that gives me plenty of practice problems to work through. Which platform would you recommend I go with?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize my learning journey and progress with the concept of completeness in normed and Banach spaces, including how I worked through understanding Cauchy sequences, convergence, and examples of completeness and incompleteness across different spaces?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you summarize my learning journey and progress with operator theory, including how my understanding of boundedness, spectrum, and resolvent sets developed over time?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started exploring applications of functional analysis in quantum mechanics and when I began advanced problem solving in functional spaces?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days after I started exploring compact operators did I begin synthesizing functional analysis concepts?"
+  }
+]

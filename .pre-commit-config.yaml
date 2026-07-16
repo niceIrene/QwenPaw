@@ -41,6 +41,7 @@ repos:
           | .*/skills/.*
           | ^e2e/
           | ^plugins/
+          | ^harbor/beam/.*/tests/beam_judge\.py$
           )
         args: [
           --ignore-missing-imports,

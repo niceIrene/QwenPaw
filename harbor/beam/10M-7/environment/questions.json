@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "Can you share the specific advice Samuel gave about savings strategies "
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "Could you share the key points from the free YouTube pottery tutorial I watched?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I ever moved my old couch to storage?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever signed up for any community volunteering events before?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different aspects of my relationship and shared activities with Jenna from May 1, 2022 to August 27, 2022, in order? Mention ONLY and ONLY eight items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different aspects of my fitness and financial discussions with Jenna from May 3, 2021 to September 7, 2021, in order? Mention ONLY and ONLY ten items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "What time did I say I searched for flights on Skyscanner?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How much did I say dinner cost at the place where Jenna seemed distant?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "What are some good options I can use to improve my health?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "What are some healthy options I can consider for my meals?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "What time do I set aside for my Saturday budget review sessions?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "When is the desk assembly scheduled to take place?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How much of my $50 date budget have I spent on the movie and picnic combined, and how much do I have left?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How many ideas have I shared at the philosophy club across meetings from May 1, 2022 to August 27, 2022?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "What should I keep in mind when planning my workout schedule around different times of the day near Palm Street?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I'm planning to update the lighting in my living room. What kind of bulbs would you suggest I use?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize how I've been managing my work-life balance and personal time from March 5, 2020 to March 30, 2021?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you summarize how Jenna and I have developed our fitness and financial routines together from May 3, 2021 to September 7, 2021?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many months passed between my teaching feedback review and when I started reflecting on my personal relationships?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days were there between when I started exploring new educational interests and when I began planning my travel for a mental recharge?"
+  }
+]

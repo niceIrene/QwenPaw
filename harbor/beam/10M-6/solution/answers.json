@@ -1,0 +1,122 @@
+{
+  "abstention": [
+    {
+      "id": "abstention-0",
+      "question": "What feedback did Brian give during the 15-minute folk piece practice in the Shell Avenue living room?",
+      "llm_response": "Based on the provided chat, there is no information related to the specific feedback Brian provided during the practice."
+    },
+    {
+      "id": "abstention-1",
+      "question": "What specific techniques did John suggest during the 10-minute critique session at Harmony Hub?",
+      "llm_response": "Based on the provided chat, there is no information related to the specific techniques John suggested during the 10-minute critique session."
+    }
+  ],
+  "contradiction_resolution": [
+    {
+      "id": "contradiction_resolution-0",
+      "question": "Have I ever adjusted my chair height to help prevent wrist strain during my practice sessions?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said you've adjusted your chair height by 3 inches to prevent wrist strain, but you also mentioned that you've never adjusted your chair height for that purpose. Could you clarify which is correct?"
+    },
+    {
+      "id": "contradiction_resolution-1",
+      "question": "Have I ever joined any violin-related groups on Reddit?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said you have never joined any violin-related groups on Reddit, but you also mentioned joining the \"Beginner Musicians\" forum where you read about starter violins. Which statement is correct?"
+    }
+  ],
+  "event_ordering": [
+    {
+      "id": "event_ordering-0",
+      "question": "Can you walk me through the order in which I brought up different ideas about incorporating my musical interests into university events and lectures from January 1, 2021 to February 25, 2021, in order? Mention ONLY and ONLY seven items.",
+      "llm_response": "You mentioned your ideas in this order: 1) Considering how ukulele skills could enhance lectures at New Jeffreytown University, possibly at Campus Plaza events\n2) Thinking of integrating ukulele into a cultural lecture at Campus Hall for 50 students\n3) Considering a ukulele demo for a university event at Campus Plaza for 40 colleagues\n4) Planning a ukulele snippet for a university lecture at Campus Hall for 45 students\n5) Planning to mention ukulele learning in a university seminar at Campus Plaza for 30 attendees\n6) Considering a ukulele workshop for students at Campus Hall targeting 35 participants\n7) Dreaming of small university gigs at Campus Plaza once skilled."
+    },
+    {
+      "id": "event_ordering-1",
+      "question": "Can you walk me through the order in which I brought up different ways my family and tutor have supported my ukulele practice from March 1, 2021 to April 24, 2021, in order? Mention ONLY and ONLY six items.",
+      "llm_response": "You mentioned the different ways of support in this order: 1) My music tutor John's initial advice on daily practice planning and confidence boosting\n2) My husband Brian's involvement with setting up practice equipment and organizing materials\n3) My daughter Barbara's help with selecting calming decor and timing warm-ups\n4) My son Christian's assistance with testing and adjusting practice tools and recording motivational videos\n5) My son Marvin's encouragement during goal reviews and cheering sessions\n6) Additional support and motivational ideas shared by Keith during accountability calls."
+    }
+  ],
+  "information_extraction": [
+    {
+      "id": "information_extraction-0",
+      "question": "How many business cards did I order from Vistaprint and what was the total cost?",
+      "llm_response": "I ordered 50 business cards from Vistaprint for $20."
+    },
+    {
+      "id": "information_extraction-1",
+      "question": "How much did I say I paid for the SD card I got from TechMart?",
+      "llm_response": "You said you got the SD card for $10."
+    }
+  ],
+  "instruction_following": [
+    {
+      "id": "instruction_following-0",
+      "question": "How can I get started with keeping a journal?",
+      "llm_response": "Start with five minutes each evening: write what happened, name the feelings or mood it produced, note where you felt it physically, and record what helped or made it worse. A simple prompt is: 'Today I felt ___ because ___; tomorrow I need ___.'."
+    },
+    {
+      "id": "instruction_following-1",
+      "question": "What options do you recommend for accessories to go with my instrument?",
+      "llm_response": "For the ukulele, consider an Aquila Nylgut string set for about $10, a Snark clip-on tuner for roughly $15, and a Gator padded gig bag for around $35. Add a Kala strap, typically about $20, only if you play standing up."
+    }
+  ],
+  "knowledge_update": [
+    {
+      "id": "knowledge_update-0",
+      "question": "How much time do I dedicate to my morning rhythm variation drills?",
+      "llm_response": "30 minutes"
+    },
+    {
+      "id": "knowledge_update-1",
+      "question": "How long is my open mic performance slot at Coral Bay Club?",
+      "llm_response": "7 minutes"
+    }
+  ],
+  "multi_session_reasoning": [
+    {
+      "id": "multi_session_reasoning-0",
+      "question": "How many $30 sessions with John have I mentioned attending or planning to attend so far?",
+      "llm_response": "You have mentioned attending or planning to attend 10 sessions costing $30 each with John."
+    },
+    {
+      "id": "multi_session_reasoning-1",
+      "question": "How have my incremental changes to morning and evening practice durations combined with my goals for rhythm and performance accuracy influenced my overall practice efficiency and progress towards mastering complex songs?",
+      "llm_response": "Your incremental morning practice extensions from 50 to 70 minutes, combined with added focused evening slots (targeted chord practice, recording analysis, mock performances), alongside rhythm improvement targets (15-20%) and aiming for 90% accuracy on 5 complex songs, have synergistically increased your practice efficiency by enabling focused, balanced skill development. This structured layering of time and goals has optimized your progress, allowing steady technical mastery while managing performance readiness and anxiety, reflecting a well-rounded, efficient practice routine."
+    }
+  ],
+  "preference_following": [
+    {
+      "id": "preference_following-0",
+      "question": "What should I keep in mind when choosing a ukulele for different playing styles?",
+      "llm_response": "Keep your current Kala ukulele as the baseline. For different styles, compare string material, body size, action, pickup support, and intonation; if upgrading, test comparable or higher-tier Kala instruments rather than moving to a Mahalo or another lower-tier option."
+    },
+    {
+      "id": "preference_following-1",
+      "question": "I'm planning how to allocate my budget for improving my skills and gear. How would you suggest I divide my spending?",
+      "llm_response": "Put about 70% of the budget into lessons, structured practice material, or workshops, keep 20% for essential maintenance, and limit accessories to roughly 10%. Skill development will improve the result more than optional gear upgrades."
+    }
+  ],
+  "summarization": [
+    {
+      "id": "summarization-0",
+      "question": "Can you summarize how my collaborations and interactions with my peers and mentors have developed from November 1, 2021 to December 27, 2021 and influenced my musical growth?",
+      "llm_response": "Your musical journey has been shaped significantly through evolving collaborations and mentorships. Initially, your mentor John at Harmony Hub provided targeted advice on learning challenging pieces, critiqued your performances with actionable feedback, and encouraged improvisation, fostering your technical and emotional growth. Concurrently, peer collaborations with Nicole, Keith, and Shannon introduced diverse perspectives and practical support, from tempo adjustments and co-teaching sessions to joint performances and brand promotion efforts. Family support also played a role, with Barbara and Brian contributing to practice planning and emotional encouragement. Over time, these interactions have collectively enhanced your skills, confidence, and professional outlook, demonstrating a progression from individual learning to integrated community engagement and strategic career planning."
+    },
+    {
+      "id": "summarization-1",
+      "question": "Can you provide a detailed summary of my overall progress and experiences with my ukulele practice and mentorship, capturing how various sessions, feedback, and resources have influenced my development and preparation from September 1, 2021 to October 28, 2021?",
+      "llm_response": "Over multiple sessions, your ukulele journey has been shaped by consistent mentorship from John at Harmony Hub, who provided targeted guidance across technical skills, performance preparation, and emotional management. Early on, John emphasized focused practice on a select set of songs, helping you polish key pieces for performances and addressing specific technical challenges like chord transitions through tailored drills. He also introduced structured tools such as a monthly practice planner to enhance organization and consistency, which you trialed to improve your practice habits. Throughout your progression, John’s feedback highlighted measurable improvements, including significant boosts in finger agility, dynamics, timing, and overall technique, with quantified growth percentages reflecting your steady advancement. Complementing this, John’s advice extended beyond technique to include stage presence coaching, anxiety management strategies, and recording setup tips, fostering a holistic development approach. Parallel to John’s mentorship, you balanced family support and peer feedback, integrating diverse perspectives to refine your skills and maintain motivation. Performance opportunities, such as gigs and open mic nights facilitated through Harmony Hub, provided practical platforms to apply your learning and build confidence. Regular reviews and reflection guides from John encouraged structured self-assessment, enhancing your focus and enabling you to set clear, actionable goals. Managing challenges like pre-gig tension and shaky hands was addressed through both mental and physical preparation techniques, supported by mentor insights. Your journey reflects a dynamic interplay of expert guidance, personal discipline, and community engagement, culminating in substantial skill growth and readiness for increasingly advanced musical endeavors."
+    }
+  ],
+  "temporal_reasoning": [
+    {
+      "id": "temporal_reasoning-0",
+      "question": "How many days passed between when I started preparing for my ukulele journey and when I began my first active practice session?",
+      "llm_response": "31 days passed between starting preparations on March 1, 2021, and beginning the first active practice session on April 1, 2021."
+    },
+    {
+      "id": "temporal_reasoning-1",
+      "question": "How many days passed between when I was exploring performance opportunities with my ukulele and when I started journaling about my ukulele journey?",
+      "llm_response": "31 days passed between when I was exploring performance opportunities on September 9, 2021, and when I started journaling about my ukulele journey on October 10, 2021."
+    }
+  ]
+}

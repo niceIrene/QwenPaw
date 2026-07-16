@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What are the specific criteria or factors that led to choosing FastAPI 0.78 over other frameworks for the backend?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What specific feedback did the team provide during the code review sessions for the unit test scripts?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I shared any protocol optimization tips with my team before?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever encrypted behavior logs to protect data privacy?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different development phases and technical focuses for my multi-agent AI platform from 2024-08-01 to 2024-09-19, in order? Mention ONLY and ONLY twenty items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different technical challenges and debugging topics related to my multi-agent AI platform from 2025-01-01 to 2025-01-30, in order? Mention ONLY and ONLY ten items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "What version of the platform did I say supports up to 2,000 agents with response times under 150ms?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How many reward calculations per second did I say the module needs to handle?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "What are some ways I can improve the speed of my database queries?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "I'm trying to improve the design of my system. Can you help me identify areas where it might be optimized?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How many agents does my protocol logic cover, and what reliability level does it achieve?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "How many agents have I covered with integration tests, and what impact has this had on pass rates and team agreement?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How many agents in total did I mention while debugging issues related to timeouts, format mismatches, and state overload?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How many agents have I completed work on when combining my progress on reward functions, Q-learning, and policy gradients?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I'm setting up authentication for a platform with a high number of users logging in simultaneously. What would you suggest I consider when choosing an authentication service?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "Can you help me set up a logging pipeline that can reliably handle over a thousand events per minute and integrate smoothly with a Python web framework?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize the overall progress and key developments in setting up and optimizing the backend infrastructure for our multi-agent AI platform from 2024-08-01 to 2024-09-19?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you summarize how I identified and resolved the technical challenges in my multi-agent AI platform from 2025-01-01 to 2025-01-30?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days after I finished finalizing stakeholder interviews did I start focusing on setting up the development environment?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days after I started the comprehensive testing suite phase did I begin setting up the deployment pipeline?"
+  }
+]

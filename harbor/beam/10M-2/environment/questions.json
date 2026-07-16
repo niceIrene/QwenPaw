@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What are the detailed steps involved in the debugging strategy for the Unreal Engine setup error code 0x80070005?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What are the criteria or considerations that led to the decision to allocate 300MB memory per module in the multi-agent framework?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I ever automated build notifications in Jenkins as part of my deployment process?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I revised my data flow designs for this project?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different features and version updates of the CARLA Simulator from 2024-07-01 to 2024-07-29? Mention ONLY and ONLY ten items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you list the order in which I brought up different aspects of my deployment and CI/CD pipeline setup from 2025-02-01 to 2025-02-25, in order? Mention ONLY and ONLY twelve items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "What delay did I find in the physics calculations per frame when I profiled the main loop?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How many points did I simulate when mocking the sensor APIs with unittest.mock?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "How is the system handling performance when rendering more complex scenes?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "How well does my algorithm perform?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "What event processing capacity does my log tool support per minute without downtime?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "What percentage of the reward function engineering has been completed, and when is the safety metrics integration expected to be finished?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "How much total delay have I noted across the agent updates, pedestrian updates, and camera data sync issues?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How many different error types related to sensor data debugging did I mention across my sessions?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I'm trying to improve the structure of my code to make it run more smoothly. What changes would you suggest to the way my modules interact?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I'm working on improving my traffic simulation code. How would you suggest I incorporate variability in vehicle speeds?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize the overall progress and key developments in my traffic simulation project, including how I addressed performance issues, optimized agent behaviors, and integrated real-time data from 2024-08-01 to 2024-10-13?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you give me a summary of how the performance optimization efforts for my self-driving car simulation progressed from 2025-01-16 to 2025-01-31?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days are there between when I start setting up the deployment pipeline and when I begin the production monitoring and maintenance planning phase?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days after I started the research phase did I begin the architecture design phase for the self-driving car simulation project?"
+  }
+]

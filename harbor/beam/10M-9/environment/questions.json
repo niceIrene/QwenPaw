@@ -1,0 +1,102 @@
+[
+  {
+    "id": "abstention-0",
+    "type": "abstention",
+    "question": "What are the steps for filing a claim with Allianz insurance as per the policy?"
+  },
+  {
+    "id": "abstention-1",
+    "type": "abstention",
+    "question": "What were the factors considered when deciding to extend the dolphin watching time to 1.5 hours?"
+  },
+  {
+    "id": "contradiction_resolution-0",
+    "type": "contradiction_resolution",
+    "question": "Have I ever initiated the booking process for Soneva Jani or any other resort?"
+  },
+  {
+    "id": "contradiction_resolution-1",
+    "type": "contradiction_resolution",
+    "question": "Have I ever taken a seaplane transfer during my trips?"
+  },
+  {
+    "id": "event_ordering-0",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up various preparations and plans for our trip from September 23, 2024 to October 3, 2024, in order? Mention ONLY and ONLY ten items."
+  },
+  {
+    "id": "event_ordering-1",
+    "type": "event_ordering",
+    "question": "Can you walk me through the order in which I brought up different interactions with the resort staff from October 13, 2024 to October 22, 2024, in order? Mention ONLY and ONLY ten items."
+  },
+  {
+    "id": "information_extraction-0",
+    "type": "information_extraction",
+    "question": "How many pages did I say the album I ordered has, and what was the cost?"
+  },
+  {
+    "id": "information_extraction-1",
+    "type": "information_extraction",
+    "question": "How did I learn about the options to customize my water-based activities, and who would I coordinate with to explore extending or combining these experiences?"
+  },
+  {
+    "id": "instruction_following-0",
+    "type": "instruction_following",
+    "question": "What should I consider when choosing between different snacks?"
+  },
+  {
+    "id": "instruction_following-1",
+    "type": "instruction_following",
+    "question": "What should I bring for the trip?"
+  },
+  {
+    "id": "knowledge_update-0",
+    "type": "knowledge_update",
+    "question": "How long is the family vision meeting scheduled to last, and what is the budget for refreshments?"
+  },
+  {
+    "id": "knowledge_update-1",
+    "type": "knowledge_update",
+    "question": "How much does the seaplane ride to Velaa Private Island cost per person?"
+  },
+  {
+    "id": "multi_session_reasoning-0",
+    "type": "multi_session_reasoning",
+    "question": "Given my finalized budget and allocations, how much can I realistically spend on spa sessions at Dusit Thani without exceeding my total budget, considering my accommodation, transfers, insurance, and extras?"
+  },
+  {
+    "id": "multi_session_reasoning-1",
+    "type": "multi_session_reasoning",
+    "question": "How much total time am I planning to spend on the first and second islands combined during my tour?"
+  },
+  {
+    "id": "preference_following-0",
+    "type": "preference_following",
+    "question": "I'm planning some water activities and want to make the most of the time on the lagoon. What would you suggest I focus on during the experience?"
+  },
+  {
+    "id": "preference_following-1",
+    "type": "preference_following",
+    "question": "I'm planning a dinner by the water and trying to decide between different types of settings. What are some options I should consider?"
+  },
+  {
+    "id": "summarization-0",
+    "type": "summarization",
+    "question": "Can you summarize how my spouse and I have developed and maintained our connection and shared experiences from October 23, 2024 to November 29, 2024?"
+  },
+  {
+    "id": "summarization-1",
+    "type": "summarization",
+    "question": "Can you give me a summary of how my spouse and I planned and prepared for our Maldives honeymoon, including the key decisions and arrangements we made along the way from September 21, 2024 to October 3, 2024?"
+  },
+  {
+    "id": "temporal_reasoning-0",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between my last full day at Soneva Jani and when I started reflecting on our honeymoon back home?"
+  },
+  {
+    "id": "temporal_reasoning-1",
+    "type": "temporal_reasoning",
+    "question": "How many days passed between when I started the exploration phase of our honeymoon and when we had our first romantic beach dinner at Soneva Jani?"
+  }
+]
