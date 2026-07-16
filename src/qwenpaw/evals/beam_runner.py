@@ -301,7 +301,8 @@ _STRUCTURED_PROMPT = (
     "recall_history tool to search those rows before answering. Search with "
     "several concise keyword or synonym queries when needed, using "
     f"all_agents=true and kind='{BEAM_HISTORY_KIND}', then expand promising "
-    "sequence ranges to inspect the full surrounding conversation. Base your "
+    "sequence ranges to inspect the full surrounding conversation. For "
+    "expand, pass lo and hi as unquoted JSON integers. Base your "
     "answer only on recalled conversation evidence. Do not use information "
     "from other history kinds. Follow any output-count or formatting "
     "constraint in the question exactly. If the requested fact is absent, "
@@ -502,6 +503,7 @@ async def run_benchmark(
 ) -> dict[str, Any]:
     if model:
         await _configure_model(agent_id, model)
+    _configure_benchmark_history(agent_id)
 
     from qwenpaw.app.multi_agent_manager import MultiAgentManager
 
@@ -675,6 +677,28 @@ async def _configure_model(agent_id: str, model: str) -> None:
         model=model_id,
     )
     save_agent_config(agent_id, agent_config)
+
+
+def _configure_benchmark_history(agent_id: str) -> None:
+    """Keep imported BEAM history for the lifetime of the benchmark run.
+
+    BEAM preserves the original timestamps of its multi-session conversation.
+    Those timestamps can be much older than Scroll's normal 30-day retention
+    window, so an agent teardown after the first probe would otherwise purge
+    the imported benchmark context. Harbor runs this agent in an isolated,
+    disposable workspace, making unbounded retention appropriate here.
+    """
+
+    from qwenpaw.config.config import load_agent_config, save_agent_config
+
+    agent_config = load_agent_config(agent_id)
+    scroll_config = agent_config.running.light_context_config.scroll_config
+    scroll_config.history_retention_days = 0
+    save_agent_config(agent_id, agent_config)
+    logger.info(
+        "BEAM benchmark history retention disabled for agent %s",
+        agent_id,
+    )
 
 
 def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:

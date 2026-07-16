@@ -25,6 +25,11 @@ Harbor/BEAM 评测路径：
 - runner 给导入行设置专用 `kind="beam_chat_turn"`。probe 被明确要求只检索
   这种历史行，因此之前 probe 写入同一数据库的问题、回答和工具结果不会被
   当成 BEAM 原始证据召回。
+- runner 会在启动 trial 的临时 workspace 前设置
+  `history_retention_days=0`。BEAM 保留了 2024–2025 年的原始时间戳，如果
+  沿用 Scroll 默认 30 天保留期，这些数据会在第一个 probe 结束后被清理。
+  该设置只作用于一次性 benchmark workspace，不改变普通 QwenPaw workspace
+  的默认保留策略。
 - `benchmark_adapters/beam_judge.py` 实现官方兼容评分：逐 rubric criterion
   产生 `0/0.5/1` 分，按 question 和 ability 聚合；`event_ordering` 使用语义
   对齐与归一化 Kendall tau；Harbor reward 是 10 个 ability 分数的宏平均。

@@ -27,6 +27,11 @@ This integration does not change the semantics of the regular
 - Imported rows use the dedicated `kind="beam_chat_turn"`. Probe prompts require
   recall to filter on that kind, preventing questions, answers, or tool results
   from earlier probes in the shared database from becoming BEAM evidence.
+- The runner sets `history_retention_days=0` in the trial's disposable
+  workspace before it is started. BEAM's original 2024–2025 timestamps would
+  otherwise fall outside Scroll's normal 30-day retention window and be
+  purged after the first probe. This does not change the default retention of
+  regular QwenPaw workspaces.
 - `benchmark_adapters/beam_judge.py` provides official-compatible scoring. It
   assigns `0/0.5/1` per rubric criterion and aggregates by question and
   ability; event ordering uses semantic alignment and normalized Kendall tau;

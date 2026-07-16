@@ -193,6 +193,31 @@ def test_ingest_chat_refuses_to_destroy_existing_history(tmp_path: Path):
     assert (workspace_dir / "history.db").read_bytes() == b"existing"
 
 
+def test_configure_benchmark_history_disables_retention(monkeypatch):
+    scroll_config = SimpleNamespace(history_retention_days=30)
+    agent_config = SimpleNamespace(
+        running=SimpleNamespace(
+            light_context_config=SimpleNamespace(
+                scroll_config=scroll_config,
+            ),
+        ),
+    )
+    saved = []
+    monkeypatch.setattr(
+        "qwenpaw.config.config.load_agent_config",
+        lambda agent_id: agent_config,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.config.config.save_agent_config",
+        lambda agent_id, config: saved.append((agent_id, config)),
+    )
+
+    beam_runner._configure_benchmark_history("beam-agent")
+
+    assert scroll_config.history_retention_days == 0
+    assert saved == [("beam-agent", agent_config)]
+
+
 class _FakeWorkspace:
     def __init__(self, events):
         self.events = events
@@ -267,6 +292,7 @@ async def test_ask_probe_writes_answer_metrics_and_trace(tmp_path: Path):
     assert workspace.request["session_id"].endswith("probe__info-0")
     prompt = workspace.request["input"][0]["content"][0]["text"]
     assert "kind='beam_chat_turn'" in prompt
+    assert "lo and hi as unquoted JSON integers" in prompt
     trace = json.loads((tmp_path / "info-0.json").read_text())
     assert trace["tool_steps"][0]["name"] == "recall_history"
     assert trace["answer"] == answer
