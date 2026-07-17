@@ -109,6 +109,46 @@ def test_load_questions_rejects_duplicate_ids(tmp_path: Path):
         beam_runner.load_questions(questions)
 
 
+def test_extract_answer_keeps_only_final_message_and_strips_headline():
+    events = [
+        SimpleNamespace(
+            object="message",
+            id="progress-1",
+            type="message",
+            role="assistant",
+            status="completed",
+            content=[SimpleNamespace(text="Let me search the history.\n\n")],
+        ),
+        SimpleNamespace(
+            object="message",
+            id="reasoning-1",
+            type="reasoning",
+            role="assistant",
+            status="completed",
+            content=[SimpleNamespace(text="Internal reasoning")],
+        ),
+        SimpleNamespace(
+            object="message",
+            id="answer-1",
+            type="message",
+            role="assistant",
+            status="completed",
+            content=[
+                {"type": "text", "text": "The final answer is 45 days.\n\n"},
+                SimpleNamespace(
+                    text="<!-- ⟦ The dates are 45 days apart ⟧ -->",
+                ),
+            ],
+        ),
+    ]
+
+    answer = beam_runner._extract_answer(events)
+
+    assert answer == "The final answer is 45 days."
+    assert "Let me search" not in answer
+    assert "⟦" not in answer
+
+
 def test_task_dir_resolves_harbor_environment_inputs(tmp_path: Path):
     environment = tmp_path / "environment"
     environment.mkdir()
@@ -269,7 +309,13 @@ async def test_ask_probe_writes_answer_metrics_and_trace(tmp_path: Path):
             object="message",
             id="answer-1",
             type="message",
-            content=[],
+            role="assistant",
+            status="completed",
+            content=[
+                SimpleNamespace(
+                    text="The target is 500 queries per second.",
+                ),
+            ],
             usage={"input_tokens": 120, "output_tokens": 10},
         ),
     ]
@@ -293,6 +339,13 @@ async def test_ask_probe_writes_answer_metrics_and_trace(tmp_path: Path):
     prompt = workspace.request["input"][0]["content"][0]["text"]
     assert "kind='beam_chat_turn'" in prompt
     assert "lo and hi as unquoted JSON integers" in prompt
+    assert "complete user-bounded exchange" in prompt
+    assert "created_on='YYYY-MM-DD'" in prompt
+    assert "created_from and created_to" in prompt
+    assert "op='days_between'" in prompt
+    assert "latest applicable user evidence" in prompt
+    assert "complete user-bounded exchange" in beam_runner._PYTHON_PROMPT
+    assert "ms.days_between(start, end)" in beam_runner._PYTHON_PROMPT
     trace = json.loads((tmp_path / "info-0.json").read_text())
     assert trace["tool_steps"][0]["name"] == "recall_history"
     assert trace["answer"] == answer

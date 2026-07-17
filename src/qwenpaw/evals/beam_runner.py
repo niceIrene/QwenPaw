@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from qwenpaw.agents.context.scroll.serialize import strip_headline
+
 logger = logging.getLogger("qwenpaw.evals.beam")
 
 BEAM_HISTORY_KIND = "beam_chat_turn"
@@ -299,14 +301,24 @@ _STRUCTURED_PROMPT = (
     "The user's benchmark conversation history is stored in your durable "
     f"history as rows with kind='{BEAM_HISTORY_KIND}'. Use the "
     "recall_history tool to search those rows before answering. Search with "
-    "several concise keyword or synonym queries when needed, using "
-    f"all_agents=true and kind='{BEAM_HISTORY_KIND}', then expand promising "
-    "sequence ranges to inspect the full surrounding conversation. For "
-    "expand, pass lo and hi as unquoted JSON integers. Base your "
-    "answer only on recalled conversation evidence. Do not use information "
-    "from other history kinds. Follow any output-count or formatting "
-    "constraint in the question exactly. If the requested fact is absent, "
-    "say so clearly."
+    "concise keyword or synonym queries when needed, using all_agents=true "
+    f"and kind='{BEAM_HISTORY_KIND}'. A search result already includes the "
+    "complete user-bounded exchange around each match, together with its "
+    "created_at timestamp; do not call expand merely to pair a user message "
+    "with its assistant reply. For a question about one source date, pass "
+    "created_on='YYYY-MM-DD'; for an inclusive source-date range, pass "
+    "created_from and created_to. Date filters may be used with an empty "
+    "query. For elapsed calendar days, use op='days_between' with the two "
+    "recalled dates. If you must reread a returned exchange, expand only its "
+    "exact exchange_start_seq through exchange_end_seq and pass lo and hi as "
+    "unquoted JSON integers. Treat role='user' rows as evidence of the "
+    "user's facts, actions, and preferences; an assistant suggestion is not "
+    "evidence that the user adopted it. When a fact changed, compare the "
+    "relevant created_at values and use the latest applicable user evidence. "
+    "Base your answer only on recalled conversation evidence. Do not use "
+    "information from other history kinds. Follow any output-count or "
+    "formatting constraint in the question exactly. If the requested fact "
+    "is absent, say so clearly."
     "\n\nQuestion: "
 )
 
@@ -314,35 +326,68 @@ _PYTHON_PROMPT = (
     "The user's benchmark conversation history is stored in your durable "
     f"history as rows with kind='{BEAM_HISTORY_KIND}'. Use the "
     "recall_history_python tool to search those rows before answering. Search "
-    "with several concise keyword or synonym queries when needed, using "
-    f"ms.search(QUERY, all_agents=True, kind='{BEAM_HISTORY_KIND}', k=20), "
-    "then use ms.expand(lo, hi) around promising matches. Base your answer "
-    "only on recalled conversation evidence. Do not use information from "
-    "other history kinds. Follow any output-count or formatting constraint "
-    "in the question exactly. If the requested fact is absent, say so clearly."
+    "with concise keyword or synonym queries when needed, using "
+    f"ms.search(QUERY, all_agents=True, kind='{BEAM_HISTORY_KIND}', k=20). "
+    "By default each result already includes the complete user-bounded "
+    "exchange around the match and its created_at timestamp; do not call "
+    "ms.expand merely to pair a user message with its assistant reply. For "
+    "one source date, pass created_on='YYYY-MM-DD'; for an inclusive source-"
+    "date range, pass created_from and created_to. Date filters may be used "
+    "with an empty query. Use ms.days_between(start, end) for elapsed "
+    "calendar days. If you must reread a returned exchange, call ms.expand "
+    "only with that result's exact exchange_start_seq and exchange_end_seq. "
+    "Treat role='user' rows as evidence of the user's facts, actions, and "
+    "preferences; an assistant suggestion is not evidence that the user "
+    "adopted it. When a fact changed, compare the relevant created_at values "
+    "and use the latest applicable user evidence. Base your answer only on "
+    "recalled conversation evidence. Do not use information from other "
+    "history kinds. Follow any output-count or formatting constraint in the "
+    "question exactly. If the requested fact is absent, say so clearly."
     "\n\nQuestion: "
 )
 
 
 def _extract_answer(events: list[Any]) -> str:
-    reasoning_ids: set[str] = set()
-    parts: list[str] = []
+    """Return only the final completed assistant message for the probe.
+
+    ``stream_query`` finalizes every visible pre-tool progress message as a
+    normal assistant message. Concatenating all non-delta content events
+    therefore leaks text such as "Let me search..." into the response sent to
+    the BEAM judge. The completed message envelope already owns its full text
+    blocks, so select the last one and apply the same headline cleanup used by
+    user-facing channels.
+    """
+    final_message: Any | None = None
     for event in events:
-        obj = getattr(event, "object", None)
-        if obj == "message":
-            event_type = getattr(event, "type", None)
-            event_type = getattr(event_type, "value", event_type)
-            if "reason" in str(event_type).lower():
-                message_id = getattr(event, "id", None)
-                if message_id:
-                    reasoning_ids.add(message_id)
-        elif obj == "content" and not getattr(event, "delta", False):
-            if getattr(event, "msg_id", None) in reasoning_ids:
-                continue
-            text = getattr(event, "text", "") or ""
-            if text:
-                parts.append(text)
-    return "".join(parts).strip()
+        if getattr(event, "object", None) != "message":
+            continue
+        event_type = getattr(event, "type", None)
+        event_type = getattr(event_type, "value", event_type)
+        if event_type != "message":
+            continue
+        role = getattr(event, "role", None)
+        role = getattr(role, "value", role)
+        if role != "assistant":
+            continue
+        status = getattr(event, "status", None)
+        status = getattr(status, "value", status)
+        if status == "completed":
+            final_message = event
+
+    if final_message is None:
+        return ""
+
+    parts: list[str] = []
+    for block in getattr(final_message, "content", None) or []:
+        text = (
+            block.get("text", "")
+            if isinstance(block, dict)
+            else getattr(block, "text", "")
+        )
+        if text:
+            parts.append(str(text))
+    answer = "".join(parts).strip()
+    return (strip_headline(answer) or "").strip()
 
 
 def _extract_tool_steps(events: list[Any]) -> list[dict[str, str]]:
