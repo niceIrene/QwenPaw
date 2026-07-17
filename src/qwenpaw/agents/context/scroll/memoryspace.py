@@ -18,7 +18,7 @@ import sqlite3
 import time
 from collections import deque
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 _DEFAULT_ROW_CAP = 1000
@@ -46,7 +46,12 @@ _RECALL_EXCL_PLACEHOLDERS = ", ".join("?" for _ in _RECALL_TOOL_NAMES)
 # module stays stdlib-only for the sandboxed REPL, so no import).
 _SYNTHETIC_USER_TAGS = ("loop_continuation", "auto_continue")
 
-_DATE_RE = re.compile(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ISO_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T"
+    r"\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?"
+    r"(?:Z|[+-]\d{2}:\d{2})?$",
+)
 _SAVED_TOOL_FILE_RE = re.compile(
     r"call `read_file` with file_path="
     r'(?:"(?P<quoted>[^"]*)"|(?P<legacy>.+?))'
@@ -117,16 +122,36 @@ def sanitize_suffix(session_id: str | None) -> str:
 
 
 def parse_date(value: object) -> date:
-    """Pull the first ``YYYY-MM-DD`` (or ``YYYY/MM/DD``) out of any string.
+    """Strictly parse an ISO date or timestamp into its calendar date.
 
-    Tolerant of trailing time / surrounding text, so a raw stored timestamp
-    like ``'2024-03-01 09:15:00'`` parses cleanly.
+    Accepted strings are ``YYYY-MM-DD`` and ISO timestamps using the ``T``
+    separator, optionally with seconds, fractional seconds, and ``Z`` or a
+    ``+/-HH:MM`` offset. A timestamp keeps the calendar date written in its
+    own stated timezone; it is not converted to the host timezone or UTC.
+    Native :class:`date` and :class:`datetime` values are also accepted.
     """
-    m = _DATE_RE.search(str(value))
-    if not m:
-        raise ValueError(f"no YYYY-MM-DD date in {value!r}")
-    y, mo, d = (int(g) for g in m.groups())
-    return date(y, mo, d)
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        raise TypeError(
+            "date value must be an ISO string, date, or datetime; "
+            f"got {type(value).__name__}",
+        )
+    try:
+        if _ISO_DATE_RE.fullmatch(value):
+            return date.fromisoformat(value)
+        if _ISO_TIMESTAMP_RE.fullmatch(value):
+            return datetime.fromisoformat(value).date()
+    except ValueError as exc:
+        raise ValueError(
+            f"invalid ISO date or timestamp {value!r}: {exc}",
+        ) from exc
+    raise ValueError(
+        f"invalid ISO date or timestamp {value!r}; expected YYYY-MM-DD or "
+        "YYYY-MM-DDTHH:MM[:SS[.fraction]][Z|+/-HH:MM]",
+    )
 
 
 # Mutating actions denied against the read-only ``hist`` schema. DDL is
@@ -286,7 +311,8 @@ class MemorySpace:
         primary way to re-read the evicted turns the index points you at.
         """
         return self._select(
-            "SELECT seq, kind, role, name, content, headline, metadata "
+            "SELECT seq, kind, role, name, content, headline, metadata, "
+            "created_at "
             "FROM hist.conversation_history "
             "WHERE seq BETWEEN ? AND ? ORDER BY seq",
             (int(lo), int(hi)),
@@ -312,7 +338,7 @@ class MemorySpace:
             params.append(self._agent_id)
         rows = self._select(
             "SELECT seq, kind, role, name, tool_input, tool_state, content, "
-            "metadata "
+            "metadata, created_at "
             "FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq",
             tuple(params),
@@ -372,7 +398,7 @@ class MemorySpace:
             params.append(self._agent_id)
         params.append(int(limit))
         return self._select(
-            "SELECT seq, kind, role, name, headline, content "
+            "SELECT seq, kind, role, name, headline, content, created_at "
             "FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq LIMIT ?",
             tuple(params),
@@ -485,6 +511,54 @@ class MemorySpace:
         params.append(floor)
         return "NOT (" + " AND ".join(conds) + ")", params
 
+    @staticmethod
+    def _created_bounds(
+        *,
+        created_on: str | None,
+        created_from: str | None,
+        created_to: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Normalize inclusive calendar-date filters to a half-open span."""
+        if created_on is not None and (
+            created_from is not None or created_to is not None
+        ):
+            raise ValueError(
+                "created_on cannot be combined with created_from/created_to",
+            )
+        if created_on is not None:
+            day = parse_date(created_on)
+            return day.isoformat(), (day + timedelta(days=1)).isoformat()
+        lower = parse_date(created_from) if created_from is not None else None
+        final = parse_date(created_to) if created_to is not None else None
+        if lower is not None and final is not None and lower > final:
+            raise ValueError("created_from must not be after created_to")
+        return (
+            lower.isoformat() if lower is not None else None,
+            (
+                (final + timedelta(days=1)).isoformat()
+                if final is not None
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _created_conditions(
+        bounds: tuple[str | None, str | None],
+        *,
+        prefix: str = "",
+    ) -> tuple[list[str], list[str]]:
+        """SQL predicates for an indexed half-open ``created_at`` span."""
+        lower, upper = bounds
+        conditions: list[str] = []
+        params: list[str] = []
+        if lower is not None:
+            conditions.append(f"{prefix}created_at >= ?")
+            params.append(lower)
+        if upper is not None:
+            conditions.append(f"{prefix}created_at < ?")
+            params.append(upper)
+        return conditions, params
+
     def search(
         self,
         query: str,
@@ -494,19 +568,30 @@ class MemorySpace:
         all_agents: bool = False,
         kind: str | None = None,
         k: int = 10,
+        include_exchange: bool = True,
+        created_on: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
     ) -> list[dict]:
         """Full-text search over ``hist.conversation_history`` content
         (FTS5), with saved tool-output file fallback.
 
-        Returns up to ``k`` rows ranked by relevance (bm25), each a dict with
-        keys: ``seq``, ``session_id``, ``kind``, ``role``, ``name``,
-        ``headline``, ``content`` (the FULL turn text — the answer is often
-        buried late in a long, multi-topic turn, so don't judge from the head
-        of it). By default searches this agent across
+        Returns up to ``k`` ranked matches. By default each match keeps its
+        row-shaped compatibility fields (``seq``, ``role``, ``content``, ...)
+        and also carries the complete containing exchange in ``exchange``. The
+        exchange starts at the nearest real user row in the same
+        ``session_id``/``agent_id`` lineage and ends before the next real user
+        row. Matches from the same exchange are deduplicated and their seqs
+        collected in ``matched_seqs``. Pass ``include_exchange=False`` for the
+        legacy matching-row-only shape. By default searches this agent across
         all its sessions. Pass ``all_agents=True`` to span every agent, or pin
         a *specific* conversation / agent with ``session_id='cron:<job>'``
         and/or ``agent_id='<other>'`` (these AND-combine and take precedence).
-        ``kind`` optionally filters by row kind. If matching content lives in
+        ``kind`` optionally filters by row kind. ``created_on`` restricts to
+        one calendar date; ``created_from``/``created_to`` form an inclusive
+        date range. These strict ISO date filters apply to ``created_at`` and
+        may be used with an empty query for date-only recall. If matching
+        content lives in
         a saved full tool-output file (because the history row only retained a
         truncated preview), search can return a ``tool_result`` row whose
         content is a small excerpt around the matching saved-file line, plus
@@ -523,13 +608,40 @@ class MemorySpace:
         previous recall round back. Earlier evicted turns of this session
         remain searchable.
         """
+        requested = max(0, int(k))
+        if requested == 0:
+            return []
         targets = self._scope_filters(all_agents, session_id, agent_id)
+        created_bounds = self._created_bounds(
+            created_on=created_on,
+            created_from=created_from,
+            created_to=created_to,
+        )
+        # A turn may contain several matching rows. Fetch beyond the requested
+        # number so deduplication can still return a useful number of distinct
+        # exchanges. The row cap remains the hard upper bound.
+        raw_limit = (
+            min(self._row_cap, max(requested * 4, requested))
+            if include_exchange
+            else requested
+        )
         # FTS5 MATCH takes a query grammar, not plain text. Sanitize first; an
         # all-punctuation query (no word tokens) has nothing to MATCH, so use
         # the LIKE scan instead — as we also do when FTS5 is unavailable.
         match = fts_match_query(query)
         if not self._fts_available() or not match:
-            return self._search_like(query, targets, kind, int(k))
+            rows = self._search_like(
+                query,
+                targets,
+                kind,
+                raw_limit,
+                created_bounds=created_bounds,
+            )
+            return (
+                self._attach_search_exchanges(rows, requested)
+                if include_exchange
+                else rows[:requested]
+            )
         # bm25 and the `tbl MATCH` syntax need the table NAME, not an alias.
         fts = "conversation_history_fts"
         # Exclude the recall tool's own turns (NULL-safe: keep un-named rows).
@@ -546,19 +658,25 @@ class MemorySpace:
         for col, val in targets:
             where.append(f"ch.{col} = ?")
             params.append(val)
+        created_where, created_params = self._created_conditions(
+            created_bounds,
+            prefix="ch.",
+        )
+        where.extend(created_where)
+        params.extend(created_params)
         if kind:
             where.append("ch.kind = ?")
             params.append(kind)
         sql = (
-            "SELECT ch.seq, ch.session_id, ch.kind, ch.role, "
-            "ch.name, ch.headline, ch.content, ch.metadata "
+            "SELECT ch.seq, ch.session_id, ch.agent_id, ch.kind, ch.role, "
+            "ch.name, ch.headline, ch.content, ch.metadata, ch.created_at "
             f"FROM hist.{fts} JOIN hist.conversation_history ch "
             f"ON ch.seq = {fts}.rowid "
             "WHERE "
             + " AND ".join(where)
             + f" ORDER BY bm25({fts}), ch.seq LIMIT ?"
         )
-        params.append(int(k))
+        params.append(raw_limit)
         try:
             rows = [
                 {kk: r[kk] for kk in r.keys()}
@@ -567,17 +685,146 @@ class MemorySpace:
         except sqlite3.OperationalError:
             # Backstop: any residual MATCH-grammar edge case the sanitizer
             # missed degrades to LIKE rather than crashing the recall call.
-            return self._search_like(query, targets, kind, int(k))
-        if kind not in (None, "tool_result") or len(rows) >= int(k):
-            return rows
-        rows.extend(
-            self._search_saved_tool_files(
+            rows = self._search_like(
                 query,
                 targets,
-                limit=max(0, int(k) - len(rows)),
-            ),
+                kind,
+                raw_limit,
+                created_bounds=created_bounds,
+            )
+            return (
+                self._attach_search_exchanges(rows, requested)
+                if include_exchange
+                else rows[:requested]
+            )
+        if kind in (None, "tool_result") and len(rows) < raw_limit:
+            rows.extend(
+                self._search_saved_tool_files(
+                    query,
+                    targets,
+                    limit=max(0, raw_limit - len(rows)),
+                    created_bounds=created_bounds,
+                ),
+            )
+        return (
+            self._attach_search_exchanges(rows, requested)
+            if include_exchange
+            else rows[:requested]
         )
-        return rows
+
+    @staticmethod
+    def _real_user_conditions(prefix: str = "") -> tuple[list[str], list]:
+        """SQL conditions identifying a kind-agnostic user boundary.
+
+        Native Scroll rows use ``kind='context_msg'`` while imported history
+        can use source-specific kinds such as ``beam_chat_turn``. The role is
+        the portable boundary signal; tagged continuation stubs remain part
+        of the preceding exchange rather than opening a new one.
+        """
+        conditions = [f"{prefix}role = 'user'"]
+        params: list = []
+        for tag in _SYNTHETIC_USER_TAGS:
+            conditions.append(
+                f"({prefix}metadata IS NULL OR {prefix}metadata NOT LIKE ?)",
+            )
+            params.append(f'%"{tag}"%')
+        return conditions, params
+
+    def _exchange_for_hit(self, hit: dict) -> tuple[int, int, list[dict]]:
+        """Return the complete user-bounded exchange containing ``hit``."""
+        hit_seq = int(hit["seq"])
+        session_id = hit.get("session_id")
+        agent_id = hit.get("agent_id")
+        lineage = ["session_id = ?", "agent_id IS ?"]
+        lineage_params: list = [session_id, agent_id]
+        user_conditions, user_params = self._real_user_conditions()
+
+        start_row = self._conn.execute(
+            "SELECT MAX(seq) AS seq FROM hist.conversation_history WHERE "
+            + " AND ".join(
+                [*lineage, *user_conditions, "seq <= ?"],
+            ),
+            (*lineage_params, *user_params, hit_seq),
+        ).fetchone()
+        start_seq = start_row["seq"] if start_row else None
+        if start_seq is None:
+            # Legacy/imported rows may predate their user boundary. There is
+            # no reliable way to pair such an orphan with neighbouring model
+            # rows, so preserve the old row-only behaviour for this hit.
+            exchange = self._select(
+                "SELECT seq, session_id, agent_id, kind, role, name, "
+                "headline, content, tool_call_id, tool_input, tool_state, "
+                "metadata, created_at FROM hist.conversation_history "
+                "WHERE seq = ?",
+                (hit_seq,),
+            )
+            return hit_seq, hit_seq, exchange or [dict(hit)]
+
+        next_row = self._conn.execute(
+            "SELECT MIN(seq) AS seq FROM hist.conversation_history WHERE "
+            + " AND ".join(
+                [*lineage, *user_conditions, "seq > ?"],
+            ),
+            (*lineage_params, *user_params, int(start_seq)),
+        ).fetchone()
+        next_user_seq = next_row["seq"] if next_row else None
+        span_conditions = [*lineage, "seq >= ?"]
+        span_params: list = [*lineage_params, int(start_seq)]
+        if next_user_seq is not None:
+            span_conditions.append("seq < ?")
+            span_params.append(int(next_user_seq))
+        exchange = self._select(
+            "SELECT seq, session_id, agent_id, kind, role, name, headline, "
+            "content, tool_call_id, tool_input, tool_state, metadata, "
+            "created_at FROM hist.conversation_history WHERE "
+            + " AND ".join(span_conditions)
+            + " ORDER BY seq",
+            tuple(span_params),
+        )
+        real_rows = [row for row in exchange if not row.get("_truncated")]
+        if not real_rows:
+            return hit_seq, hit_seq, [dict(hit)]
+        return int(real_rows[0]["seq"]), int(real_rows[-1]["seq"]), exchange
+
+    def _attach_search_exchanges(
+        self,
+        rows: list[dict],
+        limit: int,
+    ) -> list[dict]:
+        """Attach and deduplicate complete exchanges for ranked hit rows."""
+        results: list[dict] = []
+        by_exchange: dict[tuple[object, object, int], dict] = {}
+        exchange_count = 0
+        for row in rows:
+            if row.get("_truncated") or int(row.get("seq", -1)) < 0:
+                results.append(row)
+                continue
+            start, end, exchange = self._exchange_for_hit(row)
+            key = (row.get("session_id"), row.get("agent_id"), start)
+            existing = by_exchange.get(key)
+            if existing is not None:
+                seq = int(row["seq"])
+                if seq not in existing["matched_seqs"]:
+                    existing["matched_seqs"].append(seq)
+                continue
+            if exchange_count >= limit:
+                continue
+            result = dict(row)
+            result.update(
+                {
+                    "match_seq": int(row["seq"]),
+                    "matched_seqs": [int(row["seq"])],
+                    "exchange_start_seq": start,
+                    "exchange_end_seq": end,
+                    "exchange": exchange,
+                },
+            )
+            by_exchange[key] = result
+            results.append(result)
+            exchange_count += 1
+        for result in by_exchange.values():
+            result["matched_seqs"].sort()
+        return results
 
     def _fts_available(self) -> bool:
         """True iff the read-only history DB has the FTS5 index table."""
@@ -592,7 +839,15 @@ class MemorySpace:
                 self._fts_ok = False  # no hist attached at all
         return self._fts_ok
 
-    def _search_like(self, query, targets, kind, k) -> list[dict]:
+    def _search_like(
+        self,
+        query,
+        targets,
+        kind,
+        k,
+        *,
+        created_bounds: tuple[str | None, str | None] = (None, None),
+    ) -> list[dict]:
         """LIKE fallback when FTS5 is unavailable.
 
         ``targets`` is the resolved ``(column, value)`` lineage filter list
@@ -612,12 +867,17 @@ class MemorySpace:
         for col, val in targets:
             where.append(f"{col} = ?")
             params.append(val)
+        created_where, created_params = self._created_conditions(
+            created_bounds,
+        )
+        where.extend(created_where)
+        params.extend(created_params)
         if kind:
             where.append("kind = ?")
             params.append(kind)
         sql = (
-            "SELECT seq, session_id, kind, role, name, headline, content, "
-            "metadata "
+            "SELECT seq, session_id, agent_id, kind, role, name, headline, "
+            "content, metadata, created_at "
             "FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq DESC LIMIT ?"
         )
@@ -632,6 +892,7 @@ class MemorySpace:
                     query,
                     targets,
                     limit=max(0, int(k) - len(rows)),
+                    created_bounds=created_bounds,
                 ),
             )
         # If this is the *FTS-unavailable* fallback (not just an
@@ -650,6 +911,7 @@ class MemorySpace:
         *,
         limit: int = _SAVED_TOOL_CANDIDATE_PAGE_SIZE,
         before_seq: int | None = None,
+        created_bounds: tuple[str | None, str | None] = (None, None),
     ) -> list[dict]:
         """Tool-result rows whose truncated preview points at a saved file."""
         where = [
@@ -666,12 +928,18 @@ class MemorySpace:
         for col, val in targets:
             where.append(f"{col} = ?")
             params.append(val)
+        created_where, created_params = self._created_conditions(
+            created_bounds,
+        )
+        where.extend(created_where)
+        params.extend(created_params)
         if before_seq is not None:
             where.append("seq < ?")
             params.append(int(before_seq))
         sql = (
-            "SELECT seq, session_id, kind, role, name, headline, "
-            "tool_call_id, content, metadata FROM hist.conversation_history "
+            "SELECT seq, session_id, agent_id, kind, role, name, headline, "
+            "tool_call_id, content, metadata, created_at "
+            "FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq DESC LIMIT ?"
         )
         params.append(int(limit))
@@ -686,6 +954,7 @@ class MemorySpace:
         targets: list[tuple[str, str]],
         *,
         limit: int,
+        created_bounds: tuple[str | None, str | None] = (None, None),
     ) -> list[dict]:
         """Search full saved tool-result files referenced by history rows."""
         if limit <= 0:
@@ -701,6 +970,7 @@ class MemorySpace:
             candidates = self._saved_tool_candidates(
                 targets,
                 before_seq=before_seq,
+                created_bounds=created_bounds,
             )
             if not candidates:
                 break
@@ -734,9 +1004,11 @@ class MemorySpace:
                             {
                                 "seq": row["seq"],
                                 "session_id": row.get("session_id"),
+                                "agent_id": row.get("agent_id"),
                                 "kind": row.get("kind"),
                                 "role": row.get("role"),
                                 "name": row.get("name"),
+                                "created_at": row.get("created_at"),
                                 "headline": (
                                     "saved tool output match at "
                                     f"{path.name}:{match['line']}"
@@ -1026,6 +1298,7 @@ class MemorySpace:
             "role": None,
             "name": None,
             "headline": "search degraded to LIKE (this SQLite lacks FTS5)",
+            "created_at": None,
             "content": (
                 "NOTE: full-text search is unavailable (no FTS5 in this "
                 "SQLite build), so this is a literal substring (LIKE) scan — "
@@ -1042,15 +1315,18 @@ class MemorySpace:
         *,
         inclusive: bool = False,
     ) -> int:
-        """Absolute number of days between two dates — order-independent.
+        """Signed calendar-day difference ``d2 - d1`` for strict ISO values.
 
-        Each argument may be a date string or any value containing one (e.g. a
-        stored timestamp); the first ``YYYY-MM-DD`` in it is used. LLM calendar
-        arithmetic is flaky, so prefer this over computing the span by hand.
-        Pass ``inclusive=True`` to count both endpoints.
+        Date and timestamp inputs share :func:`parse_date` semantics. Leap
+        years are handled by :mod:`datetime`; invalid dates and malformed ISO
+        values raise ``ValueError``. Pass ``inclusive=True`` to include both
+        endpoints while preserving direction (``+1`` forward, ``-1``
+        backward; equal dates return ``1``).
         """
-        n = abs((parse_date(d2) - parse_date(d1)).days)
-        return n + 1 if inclusive else n
+        difference = (parse_date(d2) - parse_date(d1)).days
+        if not inclusive:
+            return difference
+        return difference + 1 if difference >= 0 else difference - 1
 
     def tables(self) -> list[str]:
         """Names of all scratch (``main``) tables defined so far."""
