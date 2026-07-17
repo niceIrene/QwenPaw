@@ -339,12 +339,14 @@ async def test_ask_probe_writes_answer_metrics_and_trace(tmp_path: Path):
     prompt = workspace.request["input"][0]["content"][0]["text"]
     assert "kind='beam_chat_turn'" in prompt
     assert "lo and hi as unquoted JSON integers" in prompt
-    assert "complete user-bounded exchange" in prompt
+    assert "complete user-bounded turn" in prompt
+    assert "turn_start_seq through turn_end_seq" in prompt
     assert "created_on='YYYY-MM-DD'" in prompt
     assert "created_from and created_to" in prompt
     assert "op='days_between'" in prompt
     assert "latest applicable user evidence" in prompt
-    assert "complete user-bounded exchange" in beam_runner._PYTHON_PROMPT
+    assert "complete user-bounded turn" in beam_runner._PYTHON_PROMPT
+    assert "turn_start_seq and turn_end_seq" in beam_runner._PYTHON_PROMPT
     assert "ms.days_between(start, end)" in beam_runner._PYTHON_PROMPT
     trace = json.loads((tmp_path / "info-0.json").read_text())
     assert trace["tool_steps"][0]["name"] == "recall_history"
