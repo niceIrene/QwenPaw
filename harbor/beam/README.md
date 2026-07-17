@@ -15,11 +15,20 @@ writes per-probe traces and token/recall metrics to Harbor's agent logs.
 This integration does not change the semantics of the regular
 `qwenpaw task -i` command. It adds a purpose-built Harbor/BEAM evaluation path:
 
+- `benchmark_adapters/qwenpaw_base_agent.py` provides the reusable abstract
+  Harbor foundation: wheel validation and installation, isolated QwenPaw
+  initialization, `provider/model` validation, command environment setup,
+  JSON log loading, and validated ATIF output. New benchmark adapters can
+  inherit it without copying this infrastructure.
 - `benchmark_adapters/qwenpaw_beam_agent.py` is the custom installed-agent
-  adapter on the Harbor host. It copies the wheel built from the current
-  checkout into the task container, preserves its valid wheel filename,
-  installs it, initializes an isolated workspace, bridges Harbor's
-  `provider/model` and API credentials, and starts the BEAM runner.
+  adapter on the Harbor host. It inherits the shared QwenPaw lifecycle and
+  retains only BEAM-specific behavior: selecting the recall interface,
+  launching the multi-probe runner, collecting BEAM metrics, and converting
+  BEAM traces to ATIF.
+- After execution, the adapter converts the per-probe QwenPaw event logs to a
+  validated Harbor ATIF-v1.7 `agent/trajectory.json`. It includes each probe's
+  prompt, reasoning, recall calls and outputs, final answer, token usage, and
+  latency while retaining the raw trace JSON files.
 - `src/qwenpaw/evals/beam_runner.py` streams the large `chat.json` into Scroll's
   `history.db` and then executes 20 probes. Ingestion bypasses ReMe
   summarization and does not generate headlines. Every probe uses a distinct
@@ -213,12 +222,52 @@ Docker environment.
 - `/logs/agent/metrics.json`: ingestion, latency, token, recall-call, and error
   metrics
 - `/logs/agent/traces/<probe-id>.json`: raw QwenPaw event/tool trace per probe
+- `/logs/agent/trajectory.json`: Harbor ATIF-v1.7 trajectory generated from all
+  probe traces for native timeline visualization
 - `/logs/verifier/scores.json`: rubric, question, and category scores
 - `/logs/verifier/reward.txt`: Harbor scalar reward
 
 Harbor downloads `/logs` with each trial. A Harbor retry starts a clean trial;
 inside a running trial, completed probes are always preserved in
 `answers.json` and the logs even if a later probe fails.
+
+`QwenPawBaseHarborAgent` is intentionally abstract. It standardizes the common
+QwenPaw lifecycle, but each benchmark subclass must still define how Harbor's
+instruction and task files are executed and how benchmark-specific outputs are
+collected. `QwenPawBeamAgent` therefore remains a BEAM-only adapter.
+
+## Visualize trajectories
+
+For local jobs, start Harbor's viewer from the repository root:
+
+```bash
+harbor view jobs --host 127.0.0.1 --port 8080
+```
+
+For jobs on a remote server, keep the viewer bound to loopback and forward it
+over SSH:
+
+```bash
+# On the server
+harbor view jobs --host 127.0.0.1 --port 8080
+
+# On the local computer
+ssh -N -L 18080:127.0.0.1:8080 USER@SERVER
+```
+
+Open `http://127.0.0.1:18080`, select a trial, and open its trajectory tab.
+The displayed step order is probe execution order only: every BEAM probe still
+runs in an isolated QwenPaw session and does not inherit another probe's active
+context.
+
+Runs created before ATIF export was added can be visualized without rerunning
+the benchmark. Backfill the existing trial, then refresh the viewer:
+
+```bash
+python -m benchmark_adapters.qwenpaw_beam_trajectory \
+  jobs/JOB_NAME/TRIAL_NAME/agent \
+  --agent-version 2.0.0.post2
+```
 
 ## Why this does not use `qwenpaw task -i`
 

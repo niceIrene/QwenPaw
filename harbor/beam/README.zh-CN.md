@@ -14,10 +14,18 @@
 这套集成没有修改普通 `qwenpaw task -i` 的执行语义，而是新增了一条专门的
 Harbor/BEAM 评测路径：
 
+- `benchmark_adapters/qwenpaw_base_agent.py` 是可复用的抽象 Harbor 基类，
+  统一负责 wheel 校验与安装、隔离 QwenPaw 初始化、`provider/model` 校验、
+  命令环境、JSON 日志读取和经过校验的 ATIF 输出。后续 benchmark adapter
+  可以直接继承，不必复制这些基础设施。
 - `benchmark_adapters/qwenpaw_beam_agent.py` 是 Harbor host 侧的自定义
-  installed-agent adapter。它把当前 checkout 构建的 QwenPaw wheel 复制进
-  task 容器，保留合法 wheel 文件名完成安装，初始化隔离 workspace，桥接
-  Harbor 的 `provider/model` 与 API key，然后启动 BEAM runner。
+  installed-agent adapter。它继承公共 QwenPaw 生命周期，只保留 BEAM 特有
+  行为：选择 recall 接口、启动多 probe runner、读取 BEAM metrics，以及把
+  BEAM traces 转换为 ATIF。
+- 运行结束后，adapter 会把逐 probe 的 QwenPaw event log 转成经过校验的
+  Harbor ATIF-v1.7 `agent/trajectory.json`。该文件包含每个 probe 的 prompt、
+  reasoning、recall 调用与返回、最终答案、token 和耗时；原始 trace JSON
+  同时保留。
 - `src/qwenpaw/evals/beam_runner.py` 流式读取大体积 `chat.json`，把原始消息
   直接写入 Scroll `history.db`，再执行 20 个 probe。注入不经过 ReMe
   summarize，也不会主动生成 headline；每个 probe 使用独立 session，答案
@@ -193,8 +201,47 @@ export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 - `/app/answers.json`：每个 probe 完成后立即 checkpoint 的答案
 - `/logs/agent/metrics.json`：导入耗时、probe 耗时、token 和 recall 次数
 - `/logs/agent/traces/<probe-id>.json`：QwenPaw 原始事件和工具轨迹
+- `/logs/agent/trajectory.json`：由全部 probe trace 生成的 Harbor ATIF-v1.7
+  轨迹，用于原生时间线可视化
 - `/logs/verifier/scores.json`：rubric、问题和类别分数
 - `/logs/verifier/reward.txt`：Harbor 最终标量 reward
 
 Harbor 会把 `/logs` 下载到 trial 结果目录。数据来源与 CC BY-SA 4.0
 要求见 [DATA_LICENSE.md](DATA_LICENSE.md)。
+
+`QwenPawBaseHarborAgent` 有意保持为抽象基类：它统一 QwenPaw 公共生命周期，
+但每个 benchmark 子类仍需定义如何执行 Harbor instruction/task 文件，以及
+如何收集该 benchmark 的专用输出。因此 `QwenPawBeamAgent` 仍然只适用于
+BEAM，并没有因为继承基类就变成通用 benchmark adapter。
+
+## 可视化 trajectory
+
+本地 job 可以在仓库根目录执行：
+
+```bash
+harbor view jobs --host 127.0.0.1 --port 8080
+```
+
+如果 job 在远程服务器上，Viewer 保持绑定服务器 loopback，再通过 SSH
+转发到本地：
+
+```bash
+# 服务器上
+harbor view jobs --host 127.0.0.1 --port 8080
+
+# 本地电脑上
+ssh -N -L 18080:127.0.0.1:8080 USER@SERVER
+```
+
+浏览器打开 `http://127.0.0.1:18080`，选择 trial 后进入 trajectory 页面。
+页面里的 step 顺序只表示 probe 执行顺序；每个 BEAM probe 仍在隔离的
+QwenPaw session 中运行，不会继承其他 probe 的 active context。
+
+在加入 ATIF 导出之前已经完成的 run 不需要重跑 benchmark。对已有 trial
+补生成文件后刷新 Viewer 即可：
+
+```bash
+python -m benchmark_adapters.qwenpaw_beam_trajectory \
+  jobs/JOB_NAME/TRIAL_NAME/agent \
+  --agent-version 2.0.0.post2
+```
