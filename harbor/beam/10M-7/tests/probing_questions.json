@@ -25,30 +25,29 @@
     ],
     "contradiction_resolution": [
         {
-            "question": "Have I ever moved my old couch to storage?",
-            "ideal_answer": "I notice you've mentioned contradictory information about this. You said you are considering moving your old couch to storage instead of selling it, but you also mentioned that you have never moved your old couch to storage. Which statement is correct?",
+            "question": "Have I ever shared ideas at the philosophy club before?",
+            "ideal_answer": "I notice you've mentioned contradictory information about this. You said you had already shared 4 ideas at the philosophy club, but you also said you had never shared any ideas there before. Which statement is correct?",
             "difficulty": "clear",
             "contradiction_type": "never_statement_violation",
-            "topic_questioned": "Moving old couch to storage",
+            "topic_questioned": "Sharing ideas at the philosophy club",
             "conversation_references": [
-                "Session 9664, 9670: Considering moving couch to storage",
-                "Session 9818: Never moved couch to storage"
+                "Session 14750: Already shared 4 ideas at the philosophy club",
+                "Session 15732: Never shared any ideas at the philosophy club"
             ],
             "tests_for": "LLM should detect contradiction and request clarification instead of giving definitive answer",
             "source_chat_ids": {
                 "first_statement": [
-                    9664,
-                    9670
+                    14750
                 ],
                 "second_statement": [
-                    9818
+                    15732
                 ]
             },
             "plan_reference": "Plan 4",
             "rubric": [
                 "LLM response should state: there is contradictory information",
-                "LLM response should mention: You said you moved your old couch to storage",
-                "LLM response should mention: you also mentioned that you have never moved your old couch to storage",
+                "LLM response should mention: You said you had already shared 4 ideas at the philosophy club",
+                "LLM response should mention: you also said you had never shared any ideas at the philosophy club",
                 "LLM response should mention: which statement is correct?"
             ]
         },

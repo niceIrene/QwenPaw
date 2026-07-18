@@ -358,3 +358,41 @@ async def test_ask_probe_writes_answer_metrics_and_trace(tmp_path: Path):
     trace = json.loads((tmp_path / "info-0.json").read_text())
     assert trace["tool_steps"][0]["name"] == "recall_history"
     assert trace["answer"] == answer
+
+
+@pytest.mark.parametrize(
+    ("probe_type", "expected"),
+    [
+        (
+            "contradiction_resolution",
+            "explicitly say the history is contradictory",
+        ),
+        ("event_ordering", "sort the selected events from oldest to newest"),
+        (
+            "multi_session_reasoning",
+            "Select one most directly matching user fact per component",
+        ),
+        ("temporal_reasoning", "Match every event qualifier precisely"),
+    ],
+)
+def test_build_probe_prompt_adds_type_guidance(probe_type, expected):
+    probe = {"id": "probe-0", "type": probe_type, "question": "Question?"}
+
+    prompt = beam_runner._build_probe_prompt(probe, "structured")
+
+    assert "Question: Question?" in prompt
+    assert "Question-type guidance:" in prompt
+    assert expected in prompt
+
+
+def test_build_probe_prompt_omits_guidance_for_other_types():
+    probe = {
+        "id": "probe-0",
+        "type": "information_extraction",
+        "question": "Question?",
+    }
+
+    prompt = beam_runner._build_probe_prompt(probe, "python")
+
+    assert "Question: Question?" in prompt
+    assert "Question-type guidance:" not in prompt

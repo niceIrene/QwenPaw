@@ -14,8 +14,8 @@
   "contradiction_resolution": [
     {
       "id": "contradiction_resolution-0",
-      "question": "Have I ever moved my old couch to storage?",
-      "llm_response": "I notice you've mentioned contradictory information about this. You said you are considering moving your old couch to storage instead of selling it, but you also mentioned that you have never moved your old couch to storage. Which statement is correct?"
+      "question": "Have I ever shared ideas at the philosophy club before?",
+      "llm_response": "I notice you've mentioned contradictory information about this. You said you had already shared 4 ideas at the philosophy club, but you also said you had never shared any ideas there before. Which statement is correct?"
     },
     {
       "id": "contradiction_resolution-1",

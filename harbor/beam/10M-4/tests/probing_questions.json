@@ -26,18 +26,18 @@
     "contradiction_resolution": [
         {
             "question": "Have I ever formulated heat equation problems before?",
-            "ideal_answer": "I notice you've mentioned contradictory information about this. You said you have never formulated any heat equation problems before, but you also mentioned that your target is to formulate 5 heat equation problems starting with u_t = u_xx on the domain x in [0,\u03c0]. Which statement is correct?",
+            "ideal_answer": "I notice you've mentioned contradictory information about this. You said you have never formulated any heat equation problems before, but you also said you had already started formulating the first of five problems with u_t = u_xx on the domain x in [0,\u03c0]. Which statement is correct?",
             "difficulty": "clear",
             "contradiction_type": "never_statement_violation",
             "topic_questioned": "Experience formulating heat equation problems",
             "conversation_references": [
-                "Session 7210: Defining and solving heat equation",
-                "Session 7212: Goal to formulate heat equation problems"
+                "Session 7362: Never formulated a heat equation problem",
+                "Session 7212: Already started formulating the first of five heat equation problems"
             ],
             "tests_for": "LLM should detect contradiction and request clarification instead of giving definitive answer",
             "source_chat_ids": {
                 "first_statement": [
-                    7210
+                    7362
                 ],
                 "second_statement": [
                     7212
@@ -47,7 +47,7 @@
             "rubric": [
                 "LLM response should state: there is contradictory information",
                 "LLM response should mention: You said you have never formulated any heat equation problems before",
-                "LLM response should mention: you also mentioned you completed 5 heat equation problems",
+                "LLM response should mention: you also said you had already started formulating the first of five heat equation problems with u_t = u_xx on [0,\u03c0]",
                 "LLM response should mention: which statement is correct?"
             ]
         },

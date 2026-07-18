@@ -367,6 +367,54 @@ _PYTHON_PROMPT = (
 )
 
 
+_PROBE_TYPE_GUIDANCE = {
+    "contradiction_resolution": (
+        "Search independently for evidence supporting each side of the "
+        "apparent contradiction. If conflicting user statements exist, "
+        "explicitly say the history is contradictory and state both claims. "
+        "Do not collapse them into one latest answer unless a later user "
+        "message explicitly retracts or corrects the earlier claim."
+    ),
+    "event_ordering": (
+        "Use the requested date range on every search. Collect distinct user "
+        "events with their created_at dates, deduplicate repeated mentions, "
+        "and sort the selected events from oldest to newest before answering. "
+        "Obey the requested item count exactly and do not invent filler items."
+    ),
+    "multi_session_reasoning": (
+        "Break the question into its named components and search each one "
+        "separately. Select one most directly matching user fact per "
+        "component instead of aggregating every similar historical mention. "
+        "Preserve "
+        "units, show the selected component values, and then perform the "
+        "requested calculation once."
+    ),
+    "temporal_reasoning": (
+        "Search for the two events separately. Match every event qualifier "
+        "precisely, such as started, finalized, final stretch, or actually "
+        "began; do not substitute an earlier broadly related event. State the "
+        "two directly supported dates, then calculate their difference with "
+        "the date tool."
+    ),
+}
+
+
+def _build_probe_prompt(
+    probe: dict[str, str],
+    recall_tool: str,
+) -> str:
+    """Build the shared recall prompt plus non-answer probe-type strategy."""
+
+    prefix = (
+        _STRUCTURED_PROMPT if recall_tool == "structured" else _PYTHON_PROMPT
+    )
+    prompt = prefix + probe["question"]
+    guidance = _PROBE_TYPE_GUIDANCE.get(probe.get("type", ""))
+    if guidance:
+        prompt += "\n\nQuestion-type guidance: " + guidance
+    return prompt
+
+
 def _extract_answer(events: list[Any]) -> str:
     """Return only the final completed assistant message for the probe.
 
@@ -486,10 +534,7 @@ async def ask_probe(
     recall_tool: str,
     trace_dir: Path | None,
 ) -> tuple[str, dict[str, Any]]:
-    prefix = (
-        _STRUCTURED_PROMPT if recall_tool == "structured" else _PYTHON_PROMPT
-    )
-    prompt = prefix + probe["question"]
+    prompt = _build_probe_prompt(probe, recall_tool)
     session_id = (
         f"beam__{_safe_id(conversation_id)}__probe__{_safe_id(probe['id'])}"
     )

@@ -653,7 +653,7 @@
             },
             "plan_reference": "Plan 7-8",
             "rubric": [
-                "LLM response should state: 12 days",
+                "LLM response should state: 11 days",
                 "LLM response should state: from January 21, 2025 till February 1, 2025"
             ]
         }
