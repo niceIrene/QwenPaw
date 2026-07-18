@@ -344,10 +344,17 @@ async def test_ask_probe_writes_answer_metrics_and_trace(tmp_path: Path):
     assert "created_on='YYYY-MM-DD'" in prompt
     assert "created_from and created_to" in prompt
     assert "op='days_between'" in prompt
-    assert "latest applicable user evidence" in prompt
+    assert "search each one separately" in prompt
+    assert "Preserve exact numbers, units, and version labels" in prompt
+    assert "same project and the same fact" in prompt
+    assert "Start with k=5 or k=10" in prompt
     assert "complete user-bounded turn" in beam_runner._PYTHON_PROMPT
     assert "turn_start_seq and turn_end_seq" in beam_runner._PYTHON_PROMPT
     assert "ms.days_between(start, end)" in beam_runner._PYTHON_PROMPT
+    assert "search each one separately" in beam_runner._PYTHON_PROMPT
+    assert "Preserve exact numbers, units, and version labels" in (
+        beam_runner._PYTHON_PROMPT
+    )
     trace = json.loads((tmp_path / "info-0.json").read_text())
     assert trace["tool_steps"][0]["name"] == "recall_history"
     assert trace["answer"] == answer

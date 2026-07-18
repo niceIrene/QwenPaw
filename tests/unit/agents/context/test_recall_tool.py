@@ -154,6 +154,16 @@ def test_expand_schema_accepts_integer_or_string_seqs(tool):
         assert accepted_types == {"integer", "string", "null"}
 
 
+def test_search_description_guides_narrow_decomposed_queries(tool):
+    description = tool.__doc__ or ""
+
+    assert "space-separated terms are ANDed" in description
+    assert "search each subject separately" in description
+    assert "Start with k=5" in description
+    assert "k=10 and increase it only" in description
+    assert "exactly the same arguments" in description
+
+
 async def test_search_finds_evicted_turn_not_active_turn(tool):
     chunk = await tool(op="search", query="flight", k=10)
     assert chunk.state == ToolResultState.SUCCESS

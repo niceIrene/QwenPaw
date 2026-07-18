@@ -265,10 +265,15 @@ plus your earlier sessions. Pick an op:
   • op="search", query="flight number", k=10 — full-text search over your
     whole history (across your past sessions). Whether the keyword matches a
     user, assistant, or tool-result row, each result includes that row's full
-    user-bounded turn. Query with keywords, not full sentences (all terms
-    must appear); use OR for alternatives and a generous k to cast a wide net:
-    query="tank OR aquarium OR goldfish", k=20. Your current in-progress turn
-    is never a hit — it is already in front of you.
+    user-bounded turn. Use 2–5 distinctive keywords, not a full sentence;
+    space-separated terms are ANDed, while OR joins alternatives. For a
+    question about multiple separate subjects, search each subject separately
+    instead of putting every subject into one AND query. Start with k=5 or
+    k=10 and increase it only when the evidence is insufficient. Complete
+    turns can be large, so a page may end before all k hits are rendered; if
+    next_cursor is returned, continue with exactly the same arguments plus
+    that cursor. Your current in-progress turn is never a hit — it is already
+    in front of you.
     Optional: kind="model_turn"/"tool_result"; all_agents=true to span every
     agent; session_id/agent_id to pin a specific one (take precedence). If a
     question asks what happened on a date, pass created_on="YYYY-MM-DD"; use
