@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Serialize AgentScope ``Msg`` blocks into ``conversation_history`` rows."""
+
 from __future__ import annotations
 
 import re
@@ -29,6 +30,19 @@ _HEADLINE_RE = re.compile(
     re.MULTILINE,
 )
 _HEADLINE_MAX = 200  # chars — a headline is an index entry, not a paragraph
+MODEL_STEP_METADATA_KEY = "qwenpaw_model_step"
+
+
+def model_step_dedup_key(message_id: str, step_index: int) -> str:
+    """Stable row identity for one logical model response in a ``Msg``.
+
+    Step zero deliberately keeps the historical ``msg.id`` key so existing
+    checkpoints and databases remain deduplicated. Later responses use a
+    suffix because AgentScope appends them to that same mutable assistant Msg.
+    """
+    if step_index == 0:
+        return message_id
+    return f"{message_id}#model-step-{step_index}"
 
 
 def _dump(block: Any) -> dict:
@@ -138,26 +152,26 @@ def strip_headline(text: str | None) -> str | None:
 def msg_to_entries(msg: Msg) -> list[LogEntry]:
     """Map one ``Msg`` to one or more durable ``LogEntry`` rows.
 
-    The assistant text/thinking/tool-call blocks become a single ``model_turn``
-    (or ``context_msg`` for user) row; each ``tool_result`` block becomes its
-    own ``tool_result`` row whose ``content`` is the flattened output (so it is
-    recallable by ``tool_call_id``).
+    AgentScope appends a whole tool loop to one mutable assistant ``Msg``. Each
+    consecutive run of model-produced blocks becomes its own ``model_turn``;
+    intervening ``tool_result`` blocks remain separate rows. This preserves the
+    logical API-response order instead of continually enlarging the first model
+    row with later thinking, text, and tool calls.
     """
-    non_result = [
-        b for b in msg.content if getattr(b, "type", None) != "tool_result"
-    ]
-    results = [
-        b for b in msg.content if getattr(b, "type", None) == "tool_result"
-    ]
     created_at = getattr(msg, "created_at", None)
     entries: list[LogEntry] = []
 
-    if non_result or not results:
+    tag = None
+    msg_meta = getattr(msg, "metadata", None)
+    if isinstance(msg_meta, dict):
+        tag = msg_meta.get(QWENPAW_MESSAGE_TAG_KEY)
+
+    def append_model_step(blocks: list[Any], step_index: int) -> None:
         name = tool_call_id = None
         tool_input = None
-        for b in non_result:
+        for b in blocks:
             if getattr(b, "type", None) == "tool_call":
-                # Scalar columns describe the turn's tool call (the last one,
+                # Scalar columns describe the step's tool call (the last one,
                 # if several); the full set is always in ``blocks``. ``input``
                 # is the call's arguments (a dict or a raw JSON string) — kept
                 # so ``recall_tool`` can show *what* was called, not just the
@@ -165,8 +179,12 @@ def msg_to_entries(msg: Msg) -> list[LogEntry]:
                 name = getattr(b, "name", None)
                 tool_call_id = getattr(b, "id", None)
                 tool_input = getattr(b, "input", None)
-        dumped = [_dump(b) for b in non_result]
-        text = msg.get_text_content() or ""
+        dumped = [_dump(b) for b in blocks]
+        text = "\n".join(
+            str(block["text"])
+            for block in dumped
+            if block.get("type") == "text" and block.get("text")
+        )
         # Headline only on the model's own turns; user/placeholder rows
         # need none. Computed from the model's own text, before media refs
         # are appended, so a placeholder line can't be mistaken for a fence.
@@ -177,19 +195,17 @@ def msg_to_entries(msg: Msg) -> list[LogEntry]:
         if media:
             joined = "\n".join(media)
             text = f"{text}\n{joined}".strip() if text else joined
-        # Persist the runtime tag (loop_continuation / auto_continue / …) so
-        # durable rows keep the "this user msg is a synthetic stub, not a
-        # request" signal — the recall layer's active-turn floor anchors on
-        # real requests only and needs it in SQL.
-        tag = None
-        msg_meta = getattr(msg, "metadata", None)
-        if isinstance(msg_meta, dict):
-            tag = msg_meta.get(QWENPAW_MESSAGE_TAG_KEY)
+        metadata = {QWENPAW_MESSAGE_TAG_KEY: str(tag)} if tag else {}
+        if msg.role == "assistant":
+            metadata[MODEL_STEP_METADATA_KEY] = {
+                "message_id": str(getattr(msg, "id", "")),
+                "step_index": step_index,
+            }
         entries.append(
             LogEntry(
-                kind="model_turn"
-                if msg.role == "assistant"
-                else "context_msg",
+                kind=(
+                    "model_turn" if msg.role == "assistant" else "context_msg"
+                ),
                 role=msg.role,
                 name=name,
                 content=text,
@@ -197,11 +213,12 @@ def msg_to_entries(msg: Msg) -> list[LogEntry]:
                 tool_input=tool_input,
                 headline=headline,
                 blocks=dumped or None,
-                metadata=({QWENPAW_MESSAGE_TAG_KEY: str(tag)} if tag else {}),
+                metadata=metadata,
                 created_at=created_at,
             ),
         )
-    for b in results:
+
+    def append_tool_result(b: Any) -> None:
         block_metadata = (
             b.get("metadata")
             if isinstance(b, dict)
@@ -224,4 +241,18 @@ def msg_to_entries(msg: Msg) -> list[LogEntry]:
                 created_at=created_at,
             ),
         )
+
+    pending: list[Any] = []
+    step_index = 0
+    for block in msg.content:
+        if getattr(block, "type", None) != "tool_result":
+            pending.append(block)
+            continue
+        if pending:
+            append_model_step(pending, step_index)
+            pending = []
+            step_index += 1
+        append_tool_result(block)
+    if pending or not entries:
+        append_model_step(pending, step_index)
     return entries

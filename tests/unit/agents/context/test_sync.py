@@ -118,6 +118,27 @@ def test_syncs_session_into_history_under_embedded_id(store, tmp_path: Path):
     assert rows and rows[0]["content"] == "found it"
 
 
+def test_sync_preserves_model_step_order(store, tmp_path: Path):
+    sessions = tmp_path / "sessions"
+    msg = _sample_msgs()[1]
+    msg.content.append(TextBlock(type="text", text="final response"))
+    _write_session_2x(sessions, "steps.json", "step-sid", [msg])
+
+    sync_sessions_to_history(history=store, sessions_dir=sessions)
+
+    rows = store._conn.execute(
+        "SELECT kind, content, dedup_key FROM conversation_history "
+        "WHERE session_id='step-sid' ORDER BY seq",
+    ).fetchall()
+    assert [(row["kind"], row["content"]) for row in rows] == [
+        ("model_turn", "working\n⟦ did the work ⟧"),
+        ("tool_result", "found it"),
+        ("model_turn", "final response"),
+    ]
+    assert rows[0]["dedup_key"] == msg.id
+    assert rows[2]["dedup_key"] == f"{msg.id}#model-step-1"
+
+
 def test_legacy_1x_session_uses_filename_fallback_id(store, tmp_path: Path):
     sessions = tmp_path / "sessions"
     _write_session_1x(sessions, "old.json", _sample_msgs())

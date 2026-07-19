@@ -15,6 +15,7 @@ import pytest
 from agentscope.message import (
     Msg,
     TextBlock,
+    ThinkingBlock,
     ToolCallBlock,
     ToolResultBlock,
 )
@@ -65,6 +66,45 @@ def assistant_with_tool(tcid: str, result_text: str = "RESULT") -> Msg:
                 name="grep",
                 output=[TextBlock(type="text", text=result_text)],
             ),
+        ],
+    )
+
+
+def assistant_with_model_steps() -> Msg:
+    """One mutable Msg containing three logical model API responses."""
+    return Msg(
+        name="a",
+        role="assistant",
+        content=[
+            ThinkingBlock(type="thinking", thinking="choose first tool"),
+            TextBlock(type="text", text="searching first"),
+            ToolCallBlock(
+                type="tool_call",
+                id="call-1",
+                name="grep",
+                input='{"pattern": "alpha"}',
+            ),
+            ToolResultBlock(
+                type="tool_result",
+                id="call-1",
+                name="grep",
+                output=[TextBlock(type="text", text="alpha result")],
+            ),
+            ThinkingBlock(type="thinking", thinking="choose second tool"),
+            ToolCallBlock(
+                type="tool_call",
+                id="call-2",
+                name="pytest",
+                input='{"path": "tests"}',
+            ),
+            ToolResultBlock(
+                type="tool_result",
+                id="call-2",
+                name="pytest",
+                output=[TextBlock(type="text", text="2 passed")],
+            ),
+            ThinkingBlock(type="thinking", thinking="compose final answer"),
+            TextBlock(type="text", text="finished\n⟦ completed work ⟧"),
         ],
     )
 
@@ -206,6 +246,126 @@ def test_tool_result_persisted_under_tool_call_id(store: HistoryStore):
     assert json.loads(rows[0]["metadata"])["qwenpaw_truncation"]["0"] == {
         "file_path": "/tmp/artifact.txt",
     }
+
+
+def test_model_api_steps_persist_in_temporal_order(store: HistoryStore):
+    msg = assistant_with_model_steps()
+    mgr = make_manager(store)
+
+    mgr._persist_new(FakeAgent([msg]))
+    mgr._persist_new(FakeAgent([msg]))
+
+    rows = store._conn.execute(
+        "SELECT seq, kind, content, blocks, metadata, dedup_key "
+        "FROM conversation_history ORDER BY seq",
+    ).fetchall()
+    assert [(row["kind"], row["content"]) for row in rows] == [
+        ("model_turn", "searching first"),
+        ("tool_result", "alpha result"),
+        ("model_turn", ""),
+        ("tool_result", "2 passed"),
+        ("model_turn", "finished\n⟦ completed work ⟧"),
+    ]
+    assert [
+        row["dedup_key"] for row in rows if row["kind"] == "model_turn"
+    ] == [
+        msg.id,
+        f"{msg.id}#model-step-1",
+        f"{msg.id}#model-step-2",
+    ]
+    model_rows = [row for row in rows if row["kind"] == "model_turn"]
+    assert [
+        json.loads(row["metadata"])["qwenpaw_model_step"]["step_index"]
+        for row in model_rows
+    ] == [0, 1, 2]
+    assert [
+        block["type"] for block in json.loads(model_rows[0]["blocks"])
+    ] == [
+        "thinking",
+        "text",
+        "tool_call",
+    ]
+    assert [
+        block["type"] for block in json.loads(model_rows[2]["blocks"])
+    ] == [
+        "thinking",
+        "text",
+    ]
+    assert msg.id in mgr._leaf_by_id
+    assert mgr._leaf_by_id[msg.id].seq == model_rows[2]["seq"]
+    assert mgr._seq_by_id[msg.id] == (rows[0]["seq"], rows[-1]["seq"])
+
+
+def test_growing_assistant_msg_appends_each_model_step_once(
+    store: HistoryStore,
+):
+    msg = Msg(
+        name="a",
+        role="assistant",
+        content=[TextBlock(type="text", text="first response")],
+    )
+    mgr = make_manager(store)
+    agent = FakeAgent([msg])
+    mgr._persist_new(agent)
+
+    msg.content.extend(
+        [
+            ToolCallBlock(
+                type="tool_call",
+                id="call-a",
+                name="grep",
+                input="{}",
+            ),
+            ToolResultBlock(
+                type="tool_result",
+                id="call-a",
+                name="grep",
+                output=[TextBlock(type="text", text="result a")],
+            ),
+        ],
+    )
+    mgr._persist_new(agent)
+    msg.content.extend(
+        [
+            TextBlock(type="text", text="second response"),
+            ToolCallBlock(
+                type="tool_call",
+                id="call-b",
+                name="pytest",
+                input="{}",
+            ),
+        ],
+    )
+    mgr._persist_new(agent)
+    msg.content.append(
+        ToolResultBlock(
+            type="tool_result",
+            id="call-b",
+            name="pytest",
+            output=[TextBlock(type="text", text="result b")],
+        ),
+    )
+    mgr._persist_new(agent)
+    msg.content.append(TextBlock(type="text", text="final response"))
+    mgr._persist_new(agent)
+
+    rows = store._conn.execute(
+        "SELECT kind, content, blocks FROM conversation_history ORDER BY seq",
+    ).fetchall()
+    assert [(row["kind"], row["content"]) for row in rows] == [
+        ("model_turn", "first response"),
+        ("tool_result", "result a"),
+        ("model_turn", "second response"),
+        ("tool_result", "result b"),
+        ("model_turn", "final response"),
+    ]
+    assert "second response" not in rows[0]["blocks"]
+    assert "final response" not in rows[2]["blocks"]
+
+    restored = make_manager(store)
+    restored.load_state(mgr.to_dict())
+    restored._persist_new(agent)
+    assert store.count("s1") == 5
 
 
 def test_auto_memory_search_message_not_persisted(store: HistoryStore):

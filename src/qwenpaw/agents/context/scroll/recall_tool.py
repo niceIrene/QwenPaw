@@ -26,6 +26,7 @@ import binascii
 import hashlib
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -54,6 +55,38 @@ _RECALL_IN_FLIGHT_NOTICE = (
 _RECALL_OBSERVATION_TRUNCATED = (
     "\n[… recall observation truncated to byte limit]"
 )
+_SEARCH_MATCH_CONTENT_MAX_BYTES = 2816
+_SEARCH_COMPANION_CONTENT_MAX_BYTES = 1024
+_SEARCH_CODE_BLOCK_MAX_BYTES = 768
+_SEARCH_CODE_CONTEXT_LINES = 2
+_SEARCH_MAX_SELECTED_BLOCKS = 4
+_QUERY_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "did",
+        "for",
+        "how",
+        "i",
+        "in",
+        "is",
+        "my",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "what",
+        "when",
+        "with",
+    },
+)
+_FENCED_CODE_RE = re.compile(
+    r"(?ms)^[ \t]*\x60{3}(?P<language>[^\n\x60]*)\n"
+    r"(?P<body>.*?)(?:\n^[ \t]*\x60{3}[ \t]*$|\Z)",
+)
+_CODE_FENCE = "\x60" * 3
 
 
 class RecallSnapshotChangedError(ValueError):
@@ -264,8 +297,11 @@ plus your earlier sessions. Pick an op:
     returned cursor unchanged to continue.
   • op="search", query="flight number", k=10 — full-text search over your
     whole history (across your past sessions). Whether the keyword matches a
-    user, assistant, or tool-result row, each result includes that row's full
-    user-bounded turn. Use 2–5 distinctive keywords, not a full sentence;
+    user, assistant, or tool-result row, each result includes a query-aware
+    preview of that row's complete user-bounded turn. Long prose and fenced
+    code blocks are compacted so later hits remain visible; use the reported
+    turn seq span with expand to read the verbatim full turn. Use 2–5
+    distinctive keywords, not a full sentence;
     space-separated terms are ANDed, while OR joins alternatives. For a
     question about multiple separate subjects, search each subject separately
     instead of putting every subject into one AND query. Start with k=5 or
@@ -330,6 +366,320 @@ _ROW_META_KEYS = (
     "session_id",
     "created_at",
 )
+
+
+@dataclass(frozen=True)
+class _RecallContentBlock:
+    """One deterministic prose or fenced-code block."""
+
+    kind: str
+    text: str
+    language: str = ""
+    body: str = ""
+
+
+def _byte_len(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _query_terms(query: str) -> tuple[str, ...]:
+    """Extract useful case-folded terms for local block relevance."""
+    terms = {
+        token
+        for token in re.findall(r"[\w.+#/-]+", query.casefold())
+        if len(token) > 1 and token not in _QUERY_STOP_WORDS
+    }
+    return tuple(sorted(terms))
+
+
+def _append_prose_blocks(
+    blocks: list[_RecallContentBlock],
+    text: str,
+) -> None:
+    for paragraph in re.split(r"\n[ \t]*\n", text):
+        normalized = paragraph.strip()
+        if normalized:
+            blocks.append(_RecallContentBlock("prose", normalized))
+
+
+def _split_content_blocks(content: str) -> list[_RecallContentBlock]:
+    """Split Markdown into prose paragraphs and fenced code blocks."""
+    blocks: list[_RecallContentBlock] = []
+    cursor = 0
+    for match in _FENCED_CODE_RE.finditer(content):
+        _append_prose_blocks(blocks, content[cursor : match.start()])
+        blocks.append(
+            _RecallContentBlock(
+                "code",
+                match.group(0).strip(),
+                match.group("language").strip() or "untyped",
+                match.group("body"),
+            ),
+        )
+        cursor = match.end()
+    _append_prose_blocks(blocks, content[cursor:])
+    return blocks
+
+
+def _block_relevance(
+    block: _RecallContentBlock,
+    terms: tuple[str, ...],
+) -> int:
+    haystack = block.text.casefold()
+    return sum(term in haystack for term in terms)
+
+
+def _bounded_excerpt(
+    text: str,
+    terms: tuple[str, ...],
+    max_bytes: int,
+) -> str:
+    """Return a bounded, preferably match-centred, UTF-8-safe excerpt."""
+    if _byte_len(text) <= max_bytes:
+        return text
+    lowered = text.casefold()
+    positions = [
+        position for term in terms if (position := lowered.find(term)) >= 0
+    ]
+    start = max(0, min(positions) - max_bytes // 3) if positions else 0
+    prefix_notice = "[…]\n" if start else ""
+    suffix_notice = "\n[…]"
+    available = max(
+        1,
+        max_bytes - _byte_len(prefix_notice) - _byte_len(suffix_notice),
+    )
+    excerpt, consumed = _utf8_prefix(text[start:], available)
+    if start + consumed >= len(text):
+        suffix_notice = ""
+    return prefix_notice + excerpt + suffix_notice
+
+
+def _code_omission_notice(
+    block: _RecallContentBlock,
+    *,
+    expand_hint: str,
+) -> str:
+    lines = block.body.splitlines()
+    return (
+        f"[code block omitted: language={block.language}, "
+        f"lines={len(lines)}, bytes={_byte_len(block.text)}; "
+        f"{expand_hint}]"
+    )
+
+
+def _compact_code_block(
+    block: _RecallContentBlock,
+    *,
+    terms: tuple[str, ...],
+    max_bytes: int,
+    expand_hint: str,
+) -> _RecallContentBlock:
+    if _byte_len(block.text) <= _SEARCH_CODE_BLOCK_MAX_BYTES:
+        return block
+    lines = block.body.splitlines()
+    matching = {
+        index
+        for index, line in enumerate(lines)
+        if any(term in line.casefold() for term in terms)
+    }
+    if not matching:
+        notice = _code_omission_notice(block, expand_hint=expand_hint)
+        return _RecallContentBlock("notice", notice)
+
+    visible: set[int] = set()
+    for index in matching:
+        visible.update(
+            range(
+                max(0, index - _SEARCH_CODE_CONTEXT_LINES),
+                min(len(lines), index + _SEARCH_CODE_CONTEXT_LINES + 1),
+            ),
+        )
+    rendered_lines: list[str] = []
+    previous = -1
+    for index in sorted(visible):
+        if previous >= 0 and index > previous + 1:
+            rendered_lines.append(
+                f"… {index - previous - 1} line(s) omitted …",
+            )
+        rendered_lines.append(lines[index])
+        previous = index
+    language = "" if block.language == "untyped" else block.language
+    excerpt = (
+        f"{_CODE_FENCE}{language}\n"
+        + "\n".join(rendered_lines)
+        + f"\n{_CODE_FENCE}\n"
+        + f"[code excerpt: {len(lines)} total line(s); {expand_hint}]"
+    )
+    return _RecallContentBlock(
+        "code",
+        _bounded_excerpt(excerpt, terms, max_bytes),
+        block.language,
+    )
+
+
+def _select_content_blocks(
+    blocks: list[_RecallContentBlock],
+    terms: tuple[str, ...],
+) -> set[int]:
+    """Select relevant blocks plus a small amount of local context."""
+    relevance = [_block_relevance(block, terms) for block in blocks]
+    ranked = sorted(
+        range(len(blocks)),
+        key=lambda index: (-relevance[index], index),
+    )
+    selected: set[int] = set()
+    for index in ranked:
+        if relevance[index] <= 0:
+            break
+        selected.add(index)
+        if len(selected) >= _SEARCH_MAX_SELECTED_BLOCKS:
+            return selected
+
+    for index in sorted(selected):
+        for neighbour in (index - 1, index + 1):
+            if 0 <= neighbour < len(blocks):
+                selected.add(neighbour)
+            if len(selected) >= _SEARCH_MAX_SELECTED_BLOCKS:
+                return selected
+    if not selected:
+        selected.add(0)
+    for index, block in enumerate(blocks):
+        if len(selected) >= _SEARCH_MAX_SELECTED_BLOCKS:
+            break
+        if block.kind == "notice":
+            selected.add(index)
+    return selected
+
+
+def _compact_content(
+    content: str,
+    *,
+    query: str,
+    max_bytes: int,
+    expand_hint: str,
+) -> str:
+    """Create a deterministic, reversible preview for one search row."""
+    if not content:
+        return content
+    terms = _query_terms(query)
+    blocks = _split_content_blocks(content)
+    if not blocks:
+        return _bounded_excerpt(content, terms, max_bytes)
+    prepared = [
+        (
+            _compact_code_block(
+                block,
+                terms=terms,
+                max_bytes=min(max_bytes, _SEARCH_CODE_BLOCK_MAX_BYTES * 2),
+                expand_hint=expand_hint,
+            )
+            if block.kind == "code"
+            else block
+        )
+        for block in blocks
+    ]
+    rendered = "\n\n".join(block.text for block in prepared)
+    if _byte_len(rendered) <= max_bytes:
+        return rendered
+
+    selected = _select_content_blocks(prepared, terms)
+
+    omitted = len(prepared) - len(selected)
+    omission = (
+        f"[… {omitted} content block(s) omitted; {expand_hint}]"
+        if omitted
+        else ""
+    )
+    separators = max(0, len(selected) - 1) * _byte_len("\n\n")
+    reserve = separators + (_byte_len("\n\n" + omission) if omission else 0)
+    per_block = max(128, (max_bytes - reserve) // len(selected))
+    selected_text = [
+        _bounded_excerpt(prepared[index].text, terms, per_block)
+        for index in sorted(selected)
+    ]
+    if omission:
+        selected_text.append(omission)
+    compacted = "\n\n".join(selected_text)
+    return _bounded_excerpt(compacted, terms, max_bytes)
+
+
+def _compact_search_rows(rows: list[dict], query: str) -> list[dict]:
+    """Compact only structured-search observations; originals stay durable."""
+    compacted_rows: list[dict] = []
+    for row in rows:
+        compacted = dict(row)
+        turn = row.get("turn")
+        if not isinstance(turn, list):
+            if row.get("content"):
+                seq = row.get("seq")
+                hint = f'use op="expand", lo={seq}, hi={seq}'
+                compacted["content"] = _compact_content(
+                    str(row["content"]),
+                    query=query,
+                    max_bytes=_SEARCH_MATCH_CONTENT_MAX_BYTES,
+                    expand_hint=hint,
+                )
+            compacted_rows.append(compacted)
+            continue
+
+        start = row.get("turn_start_seq")
+        end = row.get("turn_end_seq")
+        hint = f'use op="expand", lo={start}, hi={end}'
+        matched_seqs = {
+            int(seq)
+            for seq in row.get("matched_seqs", [row.get("match_seq")])
+            if seq is not None
+        }
+        matched_count = max(1, len(matched_seqs))
+        companion_count = max(1, len(turn) - matched_count)
+        matched_budget = max(
+            768,
+            _SEARCH_MATCH_CONTENT_MAX_BYTES // matched_count,
+        )
+        companion_budget = max(
+            256,
+            _SEARCH_COMPANION_CONTENT_MAX_BYTES // companion_count,
+        )
+        compacted_turn: list[dict] = []
+        compacted_by_seq: dict[int, str] = {}
+        for item in turn:
+            compacted_item = dict(item)
+            seq = item.get("seq")
+            is_matched = seq is not None and int(seq) in matched_seqs
+            budget = matched_budget if is_matched else companion_budget
+            content = _compact_content(
+                str(item.get("content") or ""),
+                query=query,
+                max_bytes=budget,
+                expand_hint=hint,
+            )
+            compacted_item["content"] = content
+            if seq is not None:
+                compacted_by_seq[int(seq)] = content
+            compacted_turn.append(compacted_item)
+        compacted["turn"] = compacted_turn
+
+        match_seq = row.get("match_seq")
+        original_match = next(
+            (item for item in turn if item.get("seq") == match_seq),
+            None,
+        )
+        if (
+            match_seq is not None
+            and original_match is not None
+            and str(row.get("content") or "").rstrip()
+            == str(original_match.get("content") or "").rstrip()
+        ):
+            compacted["content"] = compacted_by_seq[int(match_seq)]
+        elif row.get("content"):
+            compacted["content"] = _compact_content(
+                str(row["content"]),
+                query=query,
+                max_bytes=matched_budget,
+                expand_hint=hint,
+            )
+        compacted_rows.append(compacted)
+    return compacted_rows
 
 
 def _render_rows(rows: list[dict]) -> str:
@@ -651,6 +1001,7 @@ def _run_search(
         created_from=created_from,
         created_to=created_to,
     )
+    rows = _compact_search_rows(rows, query or "")
     label = f"search {(query or '')!r}"
     if created_on:
         label += f" created_on={created_on!r}"

@@ -37,7 +37,7 @@ from ....utils.model_response import consume_model_response
 from . import _as_internals as as_internals
 from .eviction_index import EvictionIndex, Leaf, Line
 from .history import HistoryStore
-from .serialize import msg_to_entries
+from .serialize import model_step_dedup_key, msg_to_entries
 from ..types import ContextWindowUnfitError
 from ...utils.tool_message_utils import _remove_unpaired_tool_messages
 
@@ -153,12 +153,10 @@ class ScrollContextManager:
         # default), evicted turns are also written to ``dialog/{date}.jsonl``
         # for external consumers. ``history.db`` remains the source of truth.
         self._offloader = offloader
-        self._persisted_ids: set[
-            str
-        ] = set()  # msgs whose non-result row is stored
-        self._persisted_tcids: set[
-            str
-        ] = set()  # tool_call_ids whose result row is stored
+        # Msgs whose non-result row is stored.
+        self._persisted_ids: set[str] = set()
+        # Tool-call ids whose result row is stored.
+        self._persisted_tcids: set[str] = set()
         self._seq_by_tcid: dict[
             str,
             int,
@@ -171,11 +169,11 @@ class ScrollContextManager:
         self._model_turn_seq: dict[
             str,
             int,
-        ] = {}  # msg.id -> seq of its model_turn row
+        ] = {}  # model-step dedup key -> seq of its model_turn row
         self._model_turn_nblk: dict[
             str,
             int,
-        ] = {}  # msg.id -> #non-result blocks persisted
+        ] = {}  # model-step dedup key -> #blocks persisted
         self._leaf_by_id: dict[str, Leaf] = {}  # msg.id -> its index leaf
         self._index = EvictionIndex(session_id=session_id, agent_id=agent_id)
         # What the most recent compress() actually did — /compact reads this
@@ -667,11 +665,11 @@ class ScrollContextManager:
         """Write through live-context blocks not yet persisted.
 
         AgentScope 2.0 extends the last assistant Msg in place (one Msg per
-        reply accumulates ``[text, tool_call, tool_result, ...]``). So each
-        tool_result is written once per ``tool_call_id``; the msg's single
-        non-result row is written once, then refreshed in place as the Msg
-        grows — so every cell's tool-call blocks and any later ``⟦…⟧`` headline
-        persist. Synthetic placeholders are never persisted.
+        reply accumulates ``[model blocks, tool result, model blocks, ...]``).
+        Each tool-delimited logical model response gets a stable row, and each
+        tool result is written once per ``tool_call_id``. The currently growing
+        model step is refreshed in place until a result closes it. Synthetic
+        placeholders are never persisted.
         """
         # pylint: disable=import-outside-toplevel
         from ...memory.base_memory_manager import BaseMemoryManager
@@ -686,6 +684,7 @@ class ScrollContextManager:
             if mid in self._synthetic_ids:
                 continue
             anon_pos = 0  # stable index for results lacking a tool_call_id
+            model_step = 0
             for entry in msg_to_entries(msg):
                 if entry.kind == "tool_result":
                     # Key on the call id, else this result's position in the
@@ -705,19 +704,24 @@ class ScrollContextManager:
                     self._persisted_tcids.add(tcid)
                     self._seq_by_tcid[tcid] = seq
                 else:
+                    step_key = (
+                        model_step_dedup_key(str(mid), model_step)
+                        if entry.kind == "model_turn"
+                        else str(mid)
+                    )
+                    if entry.kind == "model_turn":
+                        model_step += 1
                     nblk = len(entry.blocks or ())
-                    if mid in self._persisted_ids:
-                        # Msg extended in place — refresh the row when it grew
-                        # (more tool calls) or a headline appeared later.
-                        prev_seq = self._model_turn_seq.get(mid)
-                        if prev_seq is None:
-                            continue
+                    prev_seq = self._model_turn_seq.get(step_key)
+                    if prev_seq is not None:
+                        # The current model response extended in place. Refresh
+                        # its row when it grew or gained a headline.
                         new_headline = (
                             bool(entry.headline)
                             and mid not in self._leaf_by_id
                         )
                         if (
-                            nblk <= self._model_turn_nblk.get(mid, 0)
+                            nblk <= self._model_turn_nblk.get(step_key, 0)
                             and not new_headline
                         ):
                             continue
@@ -731,7 +735,7 @@ class ScrollContextManager:
                             tool_state=entry.tool_state,
                             tool_input=entry.tool_input,
                         )
-                        self._model_turn_nblk[mid] = nblk
+                        self._model_turn_nblk[step_key] = nblk
                         if new_headline:
                             self._leaf_by_id[mid] = Leaf(
                                 seq=prev_seq,
@@ -742,11 +746,11 @@ class ScrollContextManager:
                         session_id=self._session_id,
                         agent_id=self._agent_id,
                         entry=entry,
-                        dedup_key=mid,
+                        dedup_key=step_key,
                     )
                     self._persisted_ids.add(mid)
-                    self._model_turn_seq[mid] = seq
-                    self._model_turn_nblk[mid] = nblk
+                    self._model_turn_seq[step_key] = seq
+                    self._model_turn_nblk[step_key] = nblk
                     # A model turn with a headline becomes an index leaf.
                     if entry.headline:
                         self._leaf_by_id[mid] = Leaf(
@@ -942,12 +946,18 @@ class ScrollContextManager:
         self._model_turn_seq = {
             key: value
             for key, value in self._model_turn_seq.items()
-            if key in live_msg_ids
+            if any(
+                key == mid or key.startswith(f"{mid}#model-step-")
+                for mid in live_msg_ids
+            )
         }
         self._model_turn_nblk = {
             key: value
             for key, value in self._model_turn_nblk.items()
-            if key in live_msg_ids
+            if any(
+                key == mid or key.startswith(f"{mid}#model-step-")
+                for mid in live_msg_ids
+            )
         }
         self._leaf_by_id = {
             key: value
@@ -1160,10 +1170,10 @@ class ScrollContextManager:
         """Snapshot the dedup bookkeeping + eviction index for the agent
         checkpoint.
 
-        All maps are keyed by ``msg.id``, which round-trips identically through
-        ``AgentState`` (de)serialization — so on reload these seed the dedup
-        sets and ``_persist_new`` recognizes the restored window as already
-        durable instead of re-appending it.
+        Message maps are keyed by ``msg.id``; model-row maps use that id for
+        step zero and a stable ``#model-step-N`` suffix thereafter. Both forms
+        round-trip through ``AgentState`` (de)serialization, so on reload
+        ``_persist_new`` recognizes the restored window as already durable.
         """
         return {
             "persisted_ids": sorted(self._persisted_ids),

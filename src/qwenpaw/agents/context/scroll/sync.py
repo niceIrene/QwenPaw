@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 
 from agentscope.message import Msg
 
-from .serialize import msg_to_entries
+from .serialize import model_step_dedup_key, msg_to_entries
 
 if TYPE_CHECKING:
     from .history import HistoryStore
@@ -277,6 +277,7 @@ def _sync_file(
         # id(msg)), keeping dedup stable.
         mid = getattr(msg, "id", None) or f"{session_id}#row{row_index}"
         anon_pos = 0
+        model_step = 0
         try:
             entries = list(msg_to_entries(msg))
         except Exception as exc:  # noqa: BLE001 - tolerate a bad message
@@ -291,6 +292,9 @@ def _sync_file(
             if entry.kind == "tool_result":
                 dedup_key = entry.tool_call_id or f"{mid}#anon{anon_pos}"
                 anon_pos += 1
+            elif entry.kind == "model_turn":
+                dedup_key = model_step_dedup_key(str(mid), model_step)
+                model_step += 1
             else:
                 dedup_key = mid
             res.rows_processed += 1

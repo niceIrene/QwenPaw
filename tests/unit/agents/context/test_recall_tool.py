@@ -188,6 +188,147 @@ async def test_search_user_hit_returns_same_complete_turn(tool):
     assert "RESULT-FULL" in text
 
 
+async def test_search_compacts_long_code_and_expand_keeps_verbatim(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "compact-code.db"
+    fence = chr(96) * 3
+    code = "\n".join(f"value_{index} = {index}" for index in range(200))
+    sentinel = "FULL_CODE_TAIL_SENTINEL"
+    history = HistoryStore(db_path)
+    history.append(
+        session_id="old",
+        agent_id="ag1",
+        dedup_key="user",
+        entry=LogEntry(
+            kind="context_msg",
+            role="user",
+            content=(
+                "The selected version is 8.8.0.\n\n"
+                f"{fence}python\n{code}\n{sentinel}\n{fence}"
+            ),
+        ),
+    )
+    history.append(
+        session_id="old",
+        agent_id="ag1",
+        dedup_key="assistant",
+        entry=LogEntry(
+            kind="model_turn",
+            role="assistant",
+            content="Long explanation.\n\n" + ("detail " * 2000),
+        ),
+    )
+    history.close()
+    recall = make_recall_history(
+        history_db_path=str(db_path),
+        session_id="current",
+        agent_id="ag1",
+    )
+
+    search = await recall(op="search", query="version", k=10)
+
+    assert search.state == ToolResultState.SUCCESS
+    assert "The selected version is 8.8.0." in _text(search)
+    assert "[code block omitted: language=python" in _text(search)
+    assert 'use op="expand", lo=1, hi=2' in _text(search)
+    assert sentinel not in _text(search)
+    assert search.metadata[RECALL_PAGE_METADATA_KEY]["complete"] is True
+
+    expanded = await recall(op="expand", lo=1, hi=2)
+
+    assert expanded.state == ToolResultState.SUCCESS
+    assert sentinel in _text(expanded)
+    assert "[code block omitted:" not in _text(expanded)
+
+
+async def test_search_keeps_query_matching_code_excerpt(tmp_path: Path):
+    db_path = tmp_path / "matching-code.db"
+    fence = chr(96) * 3
+    before = "\n".join(f"before_{index} = {index}" for index in range(80))
+    after = "\n".join(f"after_{index} = {index}" for index in range(80))
+    history = HistoryStore(db_path)
+    history.append(
+        session_id="old",
+        agent_id="ag1",
+        dedup_key="user",
+        entry=LogEntry(
+            kind="context_msg",
+            role="user",
+            content=(
+                "Please inspect this configuration.\n\n"
+                f"{fence}python\n{before}\n"
+                'deepneedle = "v1"\n'
+                f"{after}\n{fence}"
+            ),
+        ),
+    )
+    history.close()
+    recall = make_recall_history(
+        history_db_path=str(db_path),
+        session_id="current",
+        agent_id="ag1",
+    )
+
+    search = await recall(op="search", query="deepneedle", k=10)
+    text = _text(search)
+
+    assert search.state == ToolResultState.SUCCESS
+    assert 'deepneedle = "v1"' in text
+    assert "[code excerpt: 161 total line(s)" in text
+    assert "before_0 = 0" not in text
+    assert "after_79 = 79" not in text
+
+
+async def test_search_compaction_keeps_all_hit_headers_visible(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "many-large-turns.db"
+    fence = chr(96) * 3
+    history = HistoryStore(db_path)
+    for index in range(3):
+        history.append(
+            session_id=f"old-{index}",
+            agent_id="ag1",
+            dedup_key=f"user-{index}",
+            entry=LogEntry(
+                kind="context_msg",
+                role="user",
+                content=f"needle fact {index}",
+            ),
+        )
+        history.append(
+            session_id=f"old-{index}",
+            agent_id="ag1",
+            dedup_key=f"assistant-{index}",
+            entry=LogEntry(
+                kind="model_turn",
+                role="assistant",
+                content=(
+                    f"{fence}python\n"
+                    + ("print('large companion')\n" * 500)
+                    + fence
+                ),
+            ),
+        )
+    history.close()
+    recall = make_recall_history(
+        history_db_path=str(db_path),
+        session_id="current",
+        agent_id="ag1",
+        page_max_bytes=8192,
+    )
+
+    search = await recall(op="search", query="needle", k=3)
+    text = _text(search)
+
+    assert search.state == ToolResultState.SUCCESS
+    assert text.count("matched_seq=") == 3
+    assert all(f"needle fact {index}" in text for index in range(3))
+    assert "[recall page complete]" in text
+    assert search.metadata[RECALL_PAGE_METADATA_KEY]["next_cursor"] is None
+
+
 async def test_search_filters_and_displays_created_at(tool):
     chunk = await tool(
         op="search",
