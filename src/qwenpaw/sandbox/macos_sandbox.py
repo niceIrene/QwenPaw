@@ -92,13 +92,30 @@ class MacOSSandbox(LocalSandbox):
         """Build the Seatbelt .sb policy string."""
         config = self._config
         _san = self._sanitize_seatbelt_path  # shorthand
+        strict_workspace_only = bool(
+            config.platform_hints.get("strict_workspace_only"),
+        )
+        python_executables = [
+            str(path)
+            for path in (
+                config.platform_hints.get("python_executables")
+                or [config.platform_hints.get("python_executable")]
+            )
+            if path
+        ]
+        process_exec_rule = "(allow process-exec*)"
+        if strict_workspace_only and python_executables:
+            literals = " ".join(
+                f'(literal "{_san(path)}")' for path in python_executables
+            )
+            process_exec_rule = f"(allow process-exec {literals})"
         lines = [
             "(version 1)",
             "",
             "(deny default)",
             "",
             "; Basic system operations",
-            "(allow process-exec*)",
+            process_exec_rule,
             "(allow process-fork)",
             "(allow signal)",
             "(allow sysctl-read)",
@@ -182,14 +199,16 @@ class MacOSSandbox(LocalSandbox):
         # File write paths (whitelist)
         lines.append("")
         lines.append("; File write")
-        # Always allow /dev/null, /dev/zero, /dev/tty, /tmp
+        # Ordinary shell tools retain writable system temp directories. The
+        # persistent CodeAct kernel opts into strict_workspace_only and uses a
+        # private TMPDIR mounted inside its workspace instead.
         write_always = [
             "/dev/null",
             "/dev/zero",
             "/dev/tty",
-            "/tmp",
-            "/private/tmp",
         ]
+        if not strict_workspace_only:
+            write_always.extend(["/tmp", "/private/tmp"])
         for p in write_always:
             lines.append("(allow file-write*")
             lines.append(f'  (subpath "{p}"))')

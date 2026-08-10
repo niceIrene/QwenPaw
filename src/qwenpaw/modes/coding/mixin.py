@@ -128,8 +128,38 @@ The internal QwenPaw workspace (configs, sessions, memory) is at:
 
     {workspace_dir}
 
-Do NOT read or write here unless the user explicitly asks.
+Do NOT read or write here unless the user explicitly names QwenPaw's internal
+workspace or asks to inspect QwenPaw's own state. Generic references to
+"memory", "workspace", files, or task data do NOT grant access to this
+directory; resolve them against the active project instead.
 """
+
+
+def _collect_codeact_repl_tool(
+    governor: object | None,
+    request_context: dict[str, str] | None,
+) -> list:
+    """Return the REPL only when its strict OS sandbox is usable."""
+    from ...repl import repl_sandbox_available
+
+    available, reason = repl_sandbox_available(governor, preflight=True)
+    if not available:
+        logger.info(
+            "CodeAct repl_exec not registered (fail-closed): %s",
+            reason,
+        )
+        return []
+    from ...governance import PolicyGuardedTool
+    from ...repl.tool_def import make_repl_exec_tool
+
+    logger.info("CodeAct repl_exec registered: %s", reason)
+    return [
+        PolicyGuardedTool(
+            make_repl_exec_tool(governor),
+            governor=governor,
+            request_context=request_context,
+        ),
+    ]
 
 
 def _project_dir_from_config(agent_config: object | None) -> str | None:
@@ -224,6 +254,9 @@ class CodingModeMixin:
             or str(getattr(self, "_workspace_dir", "") or WORKING_DIR),
         )
         result: list = []
+        result.extend(
+            _collect_codeact_repl_tool(governor, request_context),
+        )
 
         try:
             available = detect_available_lsp_languages(project_dir)
@@ -290,6 +323,9 @@ def collect_coding_tools(
         getattr(cm, "project_dir", None) or str(workspace_dir or WORKING_DIR),
     )
     result: list = []
+    result.extend(
+        _collect_codeact_repl_tool(governor, request_context),
+    )
 
     try:
         available = detect_available_lsp_languages(project_dir)

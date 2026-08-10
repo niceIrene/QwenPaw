@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from qwenpaw.runtime.prompt_contributors import (
+    CodingModeContributor,
     WorkspacePromptFilesContributor,
     build_default_prompt_manager,
 )
@@ -108,3 +109,31 @@ def test_workspace_prompt_files_skips_symlink_escape(tmp_path):
     )
 
     assert fragment is None
+
+
+def test_coding_mode_does_not_treat_generic_memory_as_internal_access(
+    tmp_path,
+):
+    """Task memory must not be confused with QwenPaw's private workspace."""
+    internal_workspace = tmp_path / "qwenpaw"
+    project = tmp_path / "task"
+    ctx = SimpleNamespace(
+        workspace_dir=str(internal_workspace),
+        extras={
+            "agent_config": SimpleNamespace(
+                coding_mode=SimpleNamespace(
+                    enabled=True,
+                    project_dir=str(project),
+                ),
+            ),
+        },
+    )
+
+    fragment = CodingModeContributor().contribute_sync(ctx)
+
+    assert fragment is not None
+    assert str(project) in fragment
+    assert str(internal_workspace) in fragment
+    assert "Generic references to" in fragment
+    assert '"memory"' in fragment
+    assert "do NOT grant access" in fragment

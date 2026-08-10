@@ -238,7 +238,26 @@ class AuditLog:
                         tc_spec.target,
                         str(decision.action.value),
                         decision.reason,
-                        "{}",
+                        json.dumps(
+                            {
+                                "provenance": getattr(
+                                    tc_spec,
+                                    "provenance",
+                                    "model",
+                                ),
+                                "workspace_id": getattr(
+                                    tc_spec,
+                                    "workspace_id",
+                                    "",
+                                ),
+                                "kernel_task_id": getattr(
+                                    tc_spec,
+                                    "kernel_task_id",
+                                    "",
+                                ),
+                            },
+                            ensure_ascii=False,
+                        ),
                     ),
                 )
                 conn.commit()

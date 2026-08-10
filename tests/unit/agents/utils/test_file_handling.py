@@ -247,10 +247,6 @@ class TestDownloadFileFromUrl:
         "qwenpaw.agents.utils.file_handling._download_remote_to_path",
     )
     async def test_remote_download(self, mock_download, tmp_path):
-        # Create a file that the mock download would produce
-        target = tmp_path / "remote.txt"
-        target.write_text("downloaded", encoding="utf-8")
-
         def fake_download(url, path):
             path.write_text("downloaded", encoding="utf-8")
 
