@@ -27,7 +27,7 @@ def test_tool_description_is_bounded_and_keeps_execution_contract():
     for required in (
         "Prefer `recall_history`",
         "`ms` is ALREADY DEFINED",
-        "variables do NOT persist",
+        "do not rely on leftover variables",
         "KEEP STDOUT BOUNDED",
         "LIMIT ? OFFSET ?",
         "ms.expand(lo, hi)",

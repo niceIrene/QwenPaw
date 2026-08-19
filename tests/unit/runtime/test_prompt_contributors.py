@@ -7,6 +7,8 @@ import pytest
 
 from qwenpaw.runtime.prompt_contributors import (
     CodingModeContributor,
+    CodeActIdentityContributor,
+    ScrollContextContributor,
     WorkspacePromptFilesContributor,
     build_default_prompt_manager,
 )
@@ -26,6 +28,142 @@ def _ctx(tmp_path, system_prompt_files):
             "memory_manager": None,
         },
     )
+
+
+def _harness_ctx(
+    tmp_path,
+    system_prompt_files,
+    *,
+    enabled=True,
+    text=None,
+    tool_routing="hybrid",
+):
+    return SimpleNamespace(
+        workspace_dir=str(tmp_path),
+        agent_id="test_agent",
+        extras={
+            "agent_config": SimpleNamespace(
+                system_prompt_files=system_prompt_files,
+                language="en",
+                codeact=SimpleNamespace(
+                    enabled=enabled,
+                    identity_text=text,
+                    tool_routing=tool_routing,
+                ),
+                running=SimpleNamespace(
+                    light_context_config=SimpleNamespace(strategy="scroll"),
+                ),
+            ),
+            "heartbeat_enabled": False,
+            "language": "en",
+            "memory_manager": None,
+        },
+    )
+
+
+def test_harness_identity_absent_when_disabled(tmp_path):
+    assert (
+        CodeActIdentityContributor().contribute_sync(
+            _harness_ctx(tmp_path, [], enabled=False),
+        )
+        is None
+    )
+    # No codeact config at all must also stay silent.
+    assert (
+        CodeActIdentityContributor().contribute_sync(
+            _ctx(tmp_path, []),
+        )
+        is None
+    )
+
+
+def test_harness_identity_emits_default_text_when_enabled(tmp_path):
+    fragment = CodeActIdentityContributor().contribute_sync(
+        _harness_ctx(tmp_path, []),
+    )
+    assert fragment is not None
+    assert "autonomous task-execution agent" in fragment
+    assert "# Role" in fragment
+    assert "pick the most reasonable interpretation" in fragment
+    # Revised text drops the contested lines.
+    assert "reversible" not in fragment
+    assert "ignore persona" not in fragment
+
+
+def test_harness_identity_honours_override_text(tmp_path):
+    fragment = CodeActIdentityContributor().contribute_sync(
+        _harness_ctx(tmp_path, [], text="custom harness identity"),
+    )
+    assert fragment == "custom harness identity"
+
+
+def test_workspace_prompt_files_suppressed_under_harness(tmp_path):
+    (tmp_path / "SOUL.md").write_text("soul body", encoding="utf-8")
+    (tmp_path / "PROFILE.md").write_text("profile body", encoding="utf-8")
+
+    fragment = WorkspacePromptFilesContributor().contribute_sync(
+        _harness_ctx(tmp_path, ["SOUL.md", "PROFILE.md"]),
+    )
+
+    assert fragment is None
+
+
+def test_scroll_context_still_active_under_harness(tmp_path):
+    """Harness runs use the scroll strategy, so its guidance stays on."""
+    fragment = ScrollContextContributor().contribute_sync(
+        _harness_ctx(tmp_path, []),
+    )
+    assert fragment is not None
+    assert "durably recorded" in fragment
+
+
+def test_scroll_context_repl_only_variant_for_codeact_repl_only(tmp_path):
+    """repl-only routing hides the structured recall_history teaching."""
+    fragment = ScrollContextContributor().contribute_sync(
+        _harness_ctx(tmp_path, [], tool_routing="repl-only"),
+    )
+
+    assert fragment is not None
+    assert "recall_history_python" in fragment
+    assert "ms.search" in fragment
+    assert 'recall_history(op="search"' not in fragment
+
+
+def test_scroll_context_standard_variant_for_codeact_hybrid(tmp_path):
+    """hybrid routing keeps the structured recall_history teaching."""
+    fragment = ScrollContextContributor().contribute_sync(
+        _harness_ctx(tmp_path, [], tool_routing="hybrid"),
+    )
+
+    assert fragment is not None
+    assert 'recall_history(op="search"' in fragment
+    assert "recall_history_python" not in fragment
+
+
+def test_default_prompt_manager_under_harness_mode(tmp_path):
+    (tmp_path / "SOUL.md").write_text("soul body", encoding="utf-8")
+    (tmp_path / "PROFILE.md").write_text("profile body", encoding="utf-8")
+
+    prompt = build_default_prompt_manager().build_sync(
+        _harness_ctx(tmp_path, ["SOUL.md", "PROFILE.md"]),
+    )
+
+    assert "autonomous task-execution agent" in prompt
+    assert "soul body" not in prompt
+    assert "profile body" not in prompt
+    # The multi-agent identity header stays (harmless, pinned elsewhere).
+    assert "# Agent Identity" in prompt
+
+
+def test_default_prompt_manager_unchanged_without_harness(tmp_path):
+    (tmp_path / "SOUL.md").write_text("soul body", encoding="utf-8")
+
+    prompt = build_default_prompt_manager().build_sync(
+        _ctx(tmp_path, ["SOUL.md"]),
+    )
+
+    assert "soul body" in prompt
+    assert "autonomous task-execution agent" not in prompt
 
 
 def test_workspace_prompt_files_respects_disabled_files(tmp_path):

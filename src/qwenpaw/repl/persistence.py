@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Typed variable persistence for the CodeAct REPL (roadmap §2.6, §2.7).
+"""Namespace snapshot persistence for the CodeAct REPL (roadmap §2.7).
 
-``persist(name)`` / ``restore_var(name)`` / ``describe(name)`` store kernel
-variables under ``workspace/.qwenpaw-repl/vars/`` using the safest format
-available for each value:
+Snapshots serialize the user namespace under
+``workspace/.qwenpaw-repl/snapshots/<id>/`` using the safest format available
+for each value:
 
 - pure JSON-serializable objects  -> ``.json``
 - numpy arrays                    -> ``.npy``  (when numpy is importable)
@@ -11,8 +11,7 @@ available for each value:
 - everything else                 -> ``.pkl`` with an explicit QwenPaw header
 
 Pickle snapshots are only restored inside the strict sandbox, matching the
-roadmap's "controlled fallback" rule.  The same format machinery backs
-ExecutionBackend snapshots under ``.qwenpaw-repl/snapshots/<id>/``.
+roadmap's "controlled fallback" rule.
 """
 
 from __future__ import annotations
@@ -20,13 +19,11 @@ from __future__ import annotations
 import json
 import pickle
 import re
-import time
 from pathlib import Path
 from typing import Any
 
 PICKLE_HEADER = b"QWENPAWPKL1\n"
 
-VARS_SUBDIR = Path(".qwenpaw-repl") / "vars"
 SNAPSHOTS_SUBDIR = Path(".qwenpaw-repl") / "snapshots"
 
 _FORMAT_EXTENSIONS = {
@@ -36,29 +33,12 @@ _FORMAT_EXTENSIONS = {
     "csv": ".csv",
     "pickle": ".pkl",
 }
-_EXTENSION_FORMATS = {ext: fmt for fmt, ext in _FORMAT_EXTENSIONS.items()}
 
 # Snapshot budget: keep automatic crash-recovery snapshots bounded.
 MAX_SNAPSHOT_VARS = 512
 MAX_SNAPSHOT_VAR_BYTES = 64 * 1024 * 1024
 
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$")
-
-
-def validate_var_name(name: Any) -> str:
-    """Reject names that are not safe, identifier-like file stems."""
-    if not isinstance(name, str) or not _NAME_RE.match(name):
-        raise ValueError(
-            "variable name must match [A-Za-z_][A-Za-z0-9_.-]{0,127}: "
-            f"{name!r}",
-        )
-    return name
-
-
-def vars_dir(workspace: Path) -> Path:
-    directory = Path(workspace).resolve() / VARS_SUBDIR
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
 
 
 def _module_of(value: Any) -> str:
@@ -101,14 +81,6 @@ def choose_format(value: Any) -> str:
     if _json_serializable(value):
         return "json"
     return "pickle"
-
-
-def _data_path_for(directory: Path, name: str) -> Path | None:
-    for extension in _FORMAT_EXTENSIONS.values():
-        candidate = directory / f"{name}{extension}"
-        if candidate.exists():
-            return candidate
-    return None
 
 
 def _write_value(path: Path, value: Any, fmt: str) -> None:
@@ -162,84 +134,9 @@ def _read_value(path: Path, fmt: str) -> Any:
                 "pickle snapshot is missing the QwenPaw header; refusing to "
                 "restore an untrusted payload",
             )
-        payload = raw[len(PICKLE_HEADER):]
+        payload = raw[len(PICKLE_HEADER) :]
         return pickle.loads(payload)  # noqa: S301 - trusted sandbox-local file
     raise ValueError(f"unsupported persistence format: {fmt}")
-
-
-def _meta_path(directory: Path, name: str) -> Path:
-    return directory / f"{name}.meta.json"
-
-
-def persist_variable(name: Any, value: Any, workspace: Path) -> dict[str, Any]:
-    """Persist one variable under the workspace and return its metadata."""
-    validated = validate_var_name(name)
-    directory = vars_dir(workspace)
-    fmt = choose_format(value)
-    extension = _FORMAT_EXTENSIONS[fmt]
-
-    # One logical variable owns one data file; drop stale format siblings.
-    existing = _data_path_for(directory, validated)
-    if existing is not None and existing.suffix != extension:
-        existing.unlink()
-    path = directory / f"{validated}{extension}"
-    _write_value(path, value, fmt)
-
-    try:
-        size = path.stat().st_size
-    except OSError:
-        size = 0
-    meta = {
-        "name": validated,
-        "type": type(value).__name__,
-        "size": size,
-        "format": fmt,
-        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-    }
-    _meta_path(directory, validated).write_text(
-        json.dumps(meta, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    return meta
-
-
-def describe_variable(name: Any, workspace: Path) -> dict[str, Any]:
-    """Return persisted-variable metadata without loading the payload."""
-    validated = validate_var_name(name)
-    directory = vars_dir(workspace)
-    meta_path = _meta_path(directory, validated)
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            if isinstance(meta, dict) and meta.get("name") == validated:
-                return meta
-        except (OSError, json.JSONDecodeError):
-            pass
-    path = _data_path_for(directory, validated)
-    if path is None:
-        raise FileNotFoundError(f"no persisted variable named {validated!r}")
-    fmt = _EXTENSION_FORMATS.get(path.suffix, "pickle")
-    return {
-        "name": validated,
-        "type": "",
-        "size": path.stat().st_size,
-        "format": fmt,
-        "saved_at": time.strftime(
-            "%Y-%m-%dT%H:%M:%S%z",
-            time.localtime(path.stat().st_mtime),
-        ),
-    }
-
-
-def restore_variable(name: Any, workspace: Path) -> Any:
-    """Load one persisted variable back into the sandboxed kernel."""
-    validated = validate_var_name(name)
-    directory = vars_dir(workspace)
-    path = _data_path_for(directory, validated)
-    if path is None:
-        raise FileNotFoundError(f"no persisted variable named {validated!r}")
-    fmt = _EXTENSION_FORMATS.get(path.suffix, "pickle")
-    return _read_value(path, fmt)
 
 
 def _visible_names(namespace: dict[str, Any]) -> list[str]:
@@ -353,13 +250,8 @@ def latest_snapshot_dir(
 __all__ = [
     "PICKLE_HEADER",
     "choose_format",
-    "describe_variable",
     "latest_snapshot_dir",
-    "persist_variable",
     "restore_namespace",
-    "restore_variable",
     "snapshot_namespace",
     "snapshot_root",
-    "validate_var_name",
-    "vars_dir",
 ]

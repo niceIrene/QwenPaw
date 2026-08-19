@@ -128,6 +128,7 @@ def build_scroll_components(
     session_id: str,
     agent_id: str | None = None,
     offloader: Any = None,
+    governor: Any = None,
 ) -> ScrollComponents | None:
     """Construct the scroll strategy's components, or ``None`` if not selected.
 
@@ -206,7 +207,36 @@ def build_scroll_components(
             scratch_root=scratch_root,
             timeout_s=sc.repl_timeout_s,
             allow_unsandboxed=scroll_unsandboxed_allowed(sc),
+            governor=governor,
         )
+        if governor is not None:
+            # Let recall cells share the CodeAct kernel: give its sandbox a
+            # read-only view of this workspace (history.db + sidecars) and a
+            # writable scratch dir. The mount source must exist before the
+            # kernel launches (nonexistent mounts are skipped).
+            try:
+                from ...repl.kernel_manager import register_repl_extra_mounts
+                from ...sandbox.config import MountSpec
+
+                Path(scratch_root).mkdir(parents=True, exist_ok=True)
+                register_repl_extra_mounts(
+                    governor,
+                    [
+                        MountSpec(
+                            path=str(Path(workspace_dir).resolve()),
+                            writable=False,
+                        ),
+                        MountSpec(
+                            path=str(Path(scratch_root).resolve()),
+                            writable=True,
+                        ),
+                    ],
+                )
+            except Exception:  # noqa: BLE001 - mounts are an optimization
+                logger.debug(
+                    "scroll: failed to register kernel mounts",
+                    exc_info=True,
+                )
         # Structured front door for the common recall ops (expand / search /
         # recall_tool): in-process bound queries, no sandbox, no approval —
         # so fold stubs and the eviction index stay readable even when the

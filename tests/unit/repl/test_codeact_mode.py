@@ -59,10 +59,28 @@ class TestResolveCodeactMode:
             CODEACT_MODE_AUTO
         )
 
-    def test_agent_config_default_is_honored(self) -> None:
-        config = SimpleNamespace(codeact_mode="off")
-        assert _resolve_codeact_mode({}, config) == CODEACT_MODE_OFF
+    def test_agent_config_codeact_routing_is_honored(self) -> None:
+        cases = {
+            "repl-only": CODEACT_MODE_REQUIRED,
+            "hybrid": CODEACT_MODE_AUTO,
+            "off": CODEACT_MODE_OFF,
+        }
+        for routing, expected in cases.items():
+            config = SimpleNamespace(
+                codeact=SimpleNamespace(enabled=True, tool_routing=routing),
+            )
+            assert _resolve_codeact_mode({}, config) == expected
+
+        # Disabled codeact config falls back to auto.
+        config = SimpleNamespace(
+            codeact=SimpleNamespace(enabled=False, tool_routing="off"),
+        )
+        assert _resolve_codeact_mode({}, config) == CODEACT_MODE_AUTO
+
         # Request context overrides the configured default.
+        config = SimpleNamespace(
+            codeact=SimpleNamespace(enabled=True, tool_routing="off"),
+        )
         assert (
             _resolve_codeact_mode({"codeact_mode": "auto"}, config)
             == CODEACT_MODE_AUTO
@@ -111,9 +129,10 @@ class TestCodeactPromptInjection:
 
 def test_codeact_prompt_covers_roadmap_rules() -> None:
     text = CODEACT_SYSTEM_PROMPT
-    assert "persist" in text
-    assert "restore_var" in text
-    assert "peek" in text
+    assert "Variables persist" in text
+    assert "bounded projections" in text
     assert "permission_denied" in text
     assert "validation_error" in text
     assert "rate_limited" in text
+    for removed in ("peek", "peek_file", "ls_vars", "restore_var", "save("):
+        assert removed not in text

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,8 @@ from .kernel_manager import (
 )
 from .output_policy import validate_display
 
+_logger = logging.getLogger(__name__)
+
 REPL_DESCRIPTION = """Execute Python in a persistent, sandboxed CodeAct REPL.
 
 Use repl_exec for multi-step data processing, filtering or aggregating large
@@ -35,20 +38,26 @@ standalone statement, or use inspect.signature(tool) when code needs a value.
 
 Do not use repl_exec for a single tool action unless the current task requires
 REPL-only routing. Treat the kernel as the data plane and the model context as
-a small control plane:
-- Assign tool results to variables by default; never print a complete tool
-  result, large dict/list, or file merely to inspect it.
-- Reuse existing variables instead of copying values from prior output.
+a small control plane. (The behavioural rules — assign results to variables
+and reuse them, never print large results, verify before finishing — live in
+the CodeAct system prompt; the points below are the tool's mechanics.)
+- The namespace persists across cells: imports, function/class definitions,
+  and data loaded into variables all survive. After you import a module or
+  read a file/dataset into a variable once, reference it directly in later
+  cells; do not re-import modules or re-read the same file every cell.
+- These names are already bound in every cell — do not import or redefine
+  them: the modules json, re, pathlib, collections (plus pandas/pd when
+  installed), and the helpers paw, workspace, workspace_path. Import only
+  what is not on this list (for example numpy).
 - Batch homogeneous tool calls in Python loops and transform/filter/sort data
   in the kernel.
-- Inspect only compact projections with peek(obj, max_items=3), where
-  max_items is bounded to 1-10, and use ls_vars() to find retained state.
+- Inspect large values with print() on bounded projections — type/len/shape,
+  head slices, .head() for DataFrames — never print a whole large value.
 - The sandbox has no general /tmp or internal QwenPaw workspace access. Use
-  workspace_path(relpath) for files, peek_file(relpath, max_bytes=1000,
-  offset=0) for bounded previews, and save(obj, relpath) for durable state.
-  ``max_chars`` is accepted as a compatibility alias but is capped at 2000.
-  Spill files are archival; keep transforming the original variables instead
-  of printing a whole spill.
+  workspace_path(relpath) to resolve files under the workspace and normal
+  pathlib reads/writes for bounded previews and durable state. Spill files
+  are archival; keep transforming the original variables instead of printing
+  a whole spill.
 - Shell and subprocess execution are unavailable. Use pathlib/os for file
   traversal, or a structured shell tool when direct tools are permitted.
 - Complete required writes and external mutations before optional validation;
@@ -57,25 +66,35 @@ a small control plane:
   ``except: pass`` or ``except Exception: pass``; handle a specific exception,
   record an actionable error, or re-raise it.
 
-Output display: the ``display`` argument controls the last-expression echo:
-"summary" (default) prints a bounded type/size/preview, "full" prints the
-complete repr (still bounded by the output policy), and "none" suppresses it.
-Use display="none" for side-effect cells, and "full" only for small results.
-
-Durable state: ``persist(name)`` saves one variable under the workspace
-(JSON/numpy/pandas/pickle by content), ``restore_var(name)`` loads it back,
-and ``describe(name)`` reports its stored metadata. Snapshots of the whole
-namespace are also taken automatically after successful cells.
-
 Discovery: ``paw.list_tools()``, ``paw.search_tools(query)`` and
 ``paw.describe_tool(path)`` enumerate the governed tools available inside the
-REPL. Background processes: ``paw.daemon(command, name)`` starts a detached
-process, ``paw.daemon_status(name)`` and ``paw.daemon_log(name)`` inspect it.
+REPL. The tool list is static for the whole session — call
+``paw.list_tools()`` at most once, remember its result, and do not repeat
+keyword searches for a capability you already located.
+
+Background processes: ``paw.daemon(command, name)`` starts a detached process
+for work that must keep running while you do other things;
+``paw.daemon_status(name)`` and ``paw.daemon_log(name)`` inspect it. If a
+step must wait for a daemon, wait inside ONE cell
+(``while paw.daemon_status(name)["alive"]: time.sleep(15)``) instead of
+spending one repl_exec call per status check.
 
 Errors are returned as one JSON object with fields kind/code/message/
-retryable/suggestion. Use ``kind`` to decide the recovery: validation_error
-means fix the arguments and retry; permission_denied cannot be bypassed;
-rate_limited/timeout are worth a limited retry; budget_exhausted means stop.
+retryable/suggestion; the ``kind`` field selects recovery (see the CodeAct
+system prompt), and budget_exhausted means stop.
+
+Long-running cells: a cell that exceeds its time budget is not killed; it
+keeps running in the background and its variables are retained. The next
+repl_exec waits for that background cell first; while it is still running
+you get a retryable kernel_busy error. On a timeout or kernel_busy, never
+resubmit the same code — the work is already in progress. If it should finish
+soon, wait and retry. If it is clearly stuck and will not finish, call
+repl_exec(reset=True) once to abandon it and restart the kernel: state
+restores to the last completed cell, so you lose only the stuck cell. Do not
+keep polling a stuck kernel — that just burns your cell budget. For genuinely
+long or parallel background processes use paw.daemon(command, name); do not
+use multiprocessing or ProcessPoolExecutor inside cells — pool workers
+deadlock in this sandbox.
 """
 
 
@@ -163,27 +182,39 @@ def _budget_note(binding: ReplRuntimeBinding) -> str:
 
 
 def make_repl_only_toolkit(toolkit: Any) -> Any:
-    """Return a model-facing Toolkit that exposes only ``repl_exec``.
+    """Return a model-facing Toolkit exposing ``repl_exec`` + recall REPL.
 
     The original toolkit remains intact and is bound to the REPL bridge for
-    governed nested calls.  This makes REPL-only routing an execution
-    boundary instead of a prompt convention.
+    governed nested calls.  ``recall_history_python`` stays top-level: it is
+    its own sandboxed recall kernel, not a governed in-cell tool (CodeAct
+    mode requires a sandbox, so it is always registered on this path; when
+    absent the toolkit degrades to ``repl_exec`` alone).  This makes
+    REPL-only routing an execution boundary instead of a prompt convention.
     """
 
     from agentscope.tool import Toolkit
 
-    repl_tools = [
+    top_level = {"repl_exec", "recall_history_python"}
+    kept = [
         tool
         for group in getattr(toolkit, "tool_groups", ()) or ()
         for tool in getattr(group, "tools", ()) or ()
-        if getattr(tool, "name", None) == "repl_exec"
+        if getattr(tool, "name", None) in top_level
+    ]
+    repl_tools = [
+        tool for tool in kept if getattr(tool, "name", None) == "repl_exec"
     ]
     if len(repl_tools) != 1:
         raise RuntimeError(
             "REPL-only routing requires exactly one repl_exec tool; "
             f"found {len(repl_tools)}",
         )
-    return Toolkit(tools=repl_tools)
+    if len(kept) == 1:
+        _logger.warning(
+            "REPL-only routing: recall_history_python not registered "
+            "(no sandbox?) — model toolkit exposes only repl_exec",
+        )
+    return Toolkit(tools=kept)
 
 
 def _governed_workspace(governor: Any) -> Path | None:
@@ -249,8 +280,16 @@ def make_repl_exec_tool(governor: Any) -> Any:
 
     binding = ReplRuntimeBinding(workspace=_governed_workspace(governor))
 
-    async def repl_exec(code: str, display: str = "summary") -> ToolChunk:
+    async def repl_exec(
+        code: str,
+        display: str = "summary",
+        reset: bool = False,
+    ) -> ToolChunk:
         """Execute one cell in the persistent sandboxed CodeAct REPL."""
+        if isinstance(reset, str):
+            reset = reset.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            reset = bool(reset)
         try:
             display = validate_display(display)
         except ValueError as exc:
@@ -336,6 +375,12 @@ def make_repl_exec_tool(governor: Any) -> Any:
                 governor=governor,
                 session_id=binding.session_id,
             )
+            if reset:
+                handle = await manager.reset_kernel(
+                    handle,
+                    governor=governor,
+                    specs=bridge.specs,
+                )
             result = await manager.execute(
                 handle,
                 code,

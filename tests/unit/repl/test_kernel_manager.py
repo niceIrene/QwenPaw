@@ -11,10 +11,13 @@ from qwenpaw.repl.governance_bridge import ToolForwardingError
 from qwenpaw.repl.kernel_manager import (
     KernelCrashedError,
     KernelManager,
+    _repl_sandbox_config,
     _stable_tool_specs,
+    register_repl_extra_mounts,
     repl_sandbox_available,
 )
 from qwenpaw.sandbox import probe_sandbox_support
+from qwenpaw.sandbox.config import MountSpec, SandboxMode
 
 
 class _NoToolBridge:
@@ -22,6 +25,30 @@ class _NoToolBridge:
 
     async def dispatch(self, *_args, **_kwargs):
         raise AssertionError("no tool call was expected")
+
+
+def test_repl_sandbox_config_includes_registered_extra_mounts(tmp_path):
+    # Scroll's recall backend registers a read-only workspace view plus a
+    # writable scratch dir on the governor; the kernel launch must honor them.
+    governor = SimpleNamespace(
+        sandbox_capability=SimpleNamespace(
+            mode=SandboxMode.BUBBLEWRAP,
+            reason="test",
+        ),
+    )
+    register_repl_extra_mounts(
+        governor,
+        [
+            MountSpec(path=str(tmp_path / "ws-root"), writable=False),
+            MountSpec(path=str(tmp_path / ".scroll"), writable=True),
+        ],
+    )
+
+    config = _repl_sandbox_config(governor, tmp_path / "ws", tmp_path / "tmp")
+
+    by_path = {mount.path: mount for mount in config.mounts}
+    assert by_path[str(tmp_path / "ws-root")].writable is False
+    assert by_path[str(tmp_path / ".scroll")].writable is True
 
 
 class _ToolBridge:
@@ -185,5 +212,67 @@ async def test_sandboxed_kernel_persists_state_and_blocks_escape(
         manager._schedule_reap(restarted)  # pylint: disable=protected-access
         await asyncio.sleep(0.15)
         assert restarted.process.returncode is not None
+    finally:
+        await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_reset_kernel_abandons_stuck_background_cell(tmp_path) -> None:
+    capability = probe_sandbox_support()
+    governor = SimpleNamespace(
+        sandbox_usable=capability.supported,
+        sandbox_globally_enabled=True,
+        sandbox_capability=capability,
+    )
+    available, reason = repl_sandbox_available(governor, preflight=True)
+    if not available:
+        pytest.skip(reason)
+    manager = KernelManager(idle_timeout=0)
+    try:
+        handle = await manager.get_or_start(
+            workspace_id="test-reset",
+            workspace=tmp_path,
+            specs=[],
+            governor=governor,
+        )
+        bridge = _NoToolBridge()
+
+        # Retain a variable so we can prove the restart restores state.
+        seed = await manager.execute(handle, "answer = 41 + 1", bridge)
+        assert seed.ok is True
+
+        # A runaway cell that swallows KeyboardInterrupt survives the soft
+        # interrupt, so it is detached and keeps the kernel busy.
+        runaway = await manager.execute(
+            handle,
+            "import time\n"
+            "while True:\n"
+            "    try:\n"
+            "        time.sleep(0.05)\n"
+            "    except KeyboardInterrupt:\n"
+            "        continue\n",
+            bridge,
+            timeout=1.0,
+        )
+        assert runaway.ok is False
+        assert runaway.error is not None
+        assert runaway.error["kind"] == "timeout"
+
+        # While the runaway cell runs, the next cell reports kernel_busy.
+        blocked = await manager.execute(handle, "1 + 1", bridge, timeout=1.0)
+        assert blocked.ok is False
+        assert blocked.error is not None
+        assert blocked.error["code"] == "kernel_busy"
+
+        # The escape hatch abandons the stuck cell and restarts the kernel.
+        old_pid = handle.process.pid
+        fresh = await manager.reset_kernel(handle, governor=governor)
+        assert fresh.process.returncode is None
+        assert fresh.process.pid != old_pid
+
+        # The restarted kernel is usable and restored the retained variable.
+        check = await manager.execute(fresh, "answer", bridge)
+        assert check.ok is True
+        assert check.stdout.strip() == "42"
     finally:
         await manager.close_all()

@@ -107,14 +107,31 @@ def test_repl_prefers_governed_coding_project(tmp_path) -> None:
 def test_repl_only_toolkit_hides_forwarded_tools() -> None:
     repl = SimpleNamespace(name="repl_exec")
     loca = SimpleNamespace(name="loca__canvas_list_courses")
+    recall_structured = SimpleNamespace(name="recall_history")
     full_toolkit = SimpleNamespace(
-        tool_groups=[SimpleNamespace(tools=[repl, loca])],
+        tool_groups=[SimpleNamespace(tools=[repl, loca, recall_structured])],
     )
 
     model_toolkit = make_repl_only_toolkit(full_toolkit)
 
     assert [tool.name for tool in model_toolkit.tool_groups[0].tools] == [
         "repl_exec",
+    ]
+
+
+def test_repl_only_toolkit_keeps_recall_history_python() -> None:
+    repl = SimpleNamespace(name="repl_exec")
+    recall_python = SimpleNamespace(name="recall_history_python")
+    loca = SimpleNamespace(name="loca__canvas_list_courses")
+    full_toolkit = SimpleNamespace(
+        tool_groups=[SimpleNamespace(tools=[repl, recall_python, loca])],
+    )
+
+    model_toolkit = make_repl_only_toolkit(full_toolkit)
+
+    assert [tool.name for tool in model_toolkit.tool_groups[0].tools] == [
+        "repl_exec",
+        "recall_history_python",
     ]
 
 

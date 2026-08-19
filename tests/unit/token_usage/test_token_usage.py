@@ -675,3 +675,233 @@ class TestTokenRecordingModelWrapper:
             TokenRecordingModelWrapper.pop_usage_for_session("test-session")
             is None
         )
+
+
+class TestRequestMetaDump:
+    """Request-meta dump: real system prompt + tools for trajectory export."""
+
+    # pylint: disable=protected-access
+
+    def _wrapper(self):
+        mock_model = MagicMock()
+        mock_model.model = "qwen3.7-max"
+        return TokenRecordingModelWrapper(
+            provider_id="dashscope",
+            model=mock_model,
+        )
+
+    def setup_method(self):
+        TokenRecordingModelWrapper._meta_dumped_sessions.clear()
+
+    def test_writes_system_prompt_and_tools(self, tmp_path, monkeypatch):
+        meta_path = tmp_path / "request_meta.json"
+        monkeypatch.setenv("QWENPAW_REQUEST_META_JSON", str(meta_path))
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-meta",
+        )
+
+        self._wrapper()._dump_request_meta(
+            [
+                {"role": "system", "content": "SYS PROMPT"},
+                {"role": "user", "content": "hi"},
+            ],
+            [{"type": "function", "function": {"name": "shell"}}],
+        )
+
+        record = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert record["session_id"] == "sess-meta"
+        assert record["model"] == "qwen3.7-max"
+        assert record["system_prompt"] == "SYS PROMPT"
+        assert record["tools"] == [
+            {"type": "function", "function": {"name": "shell"}}
+        ]
+
+    def test_captures_system_prompt_from_msg_objects(
+        self, tmp_path, monkeypatch
+    ):
+        """agentscope passes Msg objects, not wire dicts, to the model."""
+        from agentscope.message import Msg, TextBlock
+
+        meta_path = tmp_path / "request_meta.json"
+        monkeypatch.setenv("QWENPAW_REQUEST_META_JSON", str(meta_path))
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-meta",
+        )
+
+        self._wrapper()._dump_request_meta(
+            [
+                Msg(
+                    name="system",
+                    role="system",
+                    content=[TextBlock(type="text", text="SYS PROMPT")],
+                ),
+                Msg(
+                    name="user",
+                    role="user",
+                    content=[TextBlock(type="text", text="hi")],
+                ),
+            ],
+            None,
+        )
+
+        record = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert record["system_prompt"] == "SYS PROMPT"
+
+    def test_dumps_once_per_session(self, tmp_path, monkeypatch):
+        meta_path = tmp_path / "request_meta.json"
+        monkeypatch.setenv("QWENPAW_REQUEST_META_JSON", str(meta_path))
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-meta",
+        )
+        wrapper = self._wrapper()
+
+        wrapper._dump_request_meta(
+            [{"role": "system", "content": "FIRST"}],
+            [{"type": "function", "function": {"name": "shell"}}],
+        )
+        wrapper._dump_request_meta(
+            [{"role": "system", "content": "SECOND"}],
+            [],
+        )
+
+        record = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert record["system_prompt"] == "FIRST"
+
+    def test_new_session_dumps_again(self, tmp_path, monkeypatch):
+        meta_path = tmp_path / "request_meta.json"
+        monkeypatch.setenv("QWENPAW_REQUEST_META_JSON", str(meta_path))
+        session = {"id": "sess-a"}
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: session["id"],
+        )
+        wrapper = self._wrapper()
+
+        wrapper._dump_request_meta(
+            [{"role": "system", "content": "A"}],
+            None,
+        )
+        session["id"] = "sess-b"
+        wrapper._dump_request_meta(
+            [{"role": "system", "content": "B"}],
+            None,
+        )
+
+        record = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert record["session_id"] == "sess-b"
+        assert record["system_prompt"] == "B"
+        assert record["tools"] == []
+
+    def test_disabled_without_env(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("QWENPAW_REQUEST_META_JSON", raising=False)
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-meta",
+        )
+
+        self._wrapper()._dump_request_meta(
+            [{"role": "system", "content": "SYS"}],
+            None,
+        )
+
+        assert not (tmp_path / "request_meta.json").exists()
+
+
+class TestOtelSpanExport:
+    """OTel-style span JSONL export, gated by QWENPAW_OTEL_JSONL."""
+
+    # pylint: disable=protected-access
+
+    def _wrapper(self):
+        mock_model = MagicMock()
+        mock_model.model = "qwen3.7-max"
+        return TokenRecordingModelWrapper(
+            provider_id="dashscope",
+            model=mock_model,
+        )
+
+    def test_span_fields(self, tmp_path, monkeypatch):
+        import hashlib
+
+        path = tmp_path / "otel.jsonl"
+        monkeypatch.setenv("QWENPAW_OTEL_JSONL", str(path))
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-otel",
+        )
+        usage = MagicMock()
+        usage.input_tokens = 10
+        usage.output_tokens = 5
+
+        self._wrapper()._emit_otel_span(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"type": "function"}],
+            usage=usage,
+            started_iso="2026-08-14T00:00:00.000+00:00",
+            duration_ms=12.3456,
+        )
+
+        lines = path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        span = json.loads(lines[0])
+        assert span["name"] == "qwenpaw.llm qwen3.7-max"
+        assert span["trace_id"] == hashlib.md5(b"sess-otel").hexdigest()
+        assert len(span["span_id"]) == 16
+        assert span["duration_ms"] == 12.346
+        attrs = span["attributes"]
+        assert attrs["gen_ai.system"] == "dashscope"
+        assert attrs["gen_ai.request.model"] == "qwen3.7-max"
+        assert attrs["gen_ai.usage.input_tokens"] == 10
+        assert attrs["gen_ai.usage.output_tokens"] == 5
+        assert attrs["message_count"] == 1
+        assert attrs["tool_count"] == 1
+
+    def test_disabled_without_env(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("QWENPAW_OTEL_JSONL", raising=False)
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-otel",
+        )
+
+        self._wrapper()._emit_otel_span(
+            messages=[],
+            tools=None,
+            usage=None,
+            started_iso="2026-08-14T00:00:00.000+00:00",
+            duration_ms=1.0,
+        )
+
+        assert not (tmp_path / "otel.jsonl").exists()
+
+    async def test_call_emits_span(self, tmp_path, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        path = tmp_path / "otel.jsonl"
+        monkeypatch.setenv("QWENPAW_OTEL_JSONL", str(path))
+        monkeypatch.setattr(
+            "qwenpaw.app.agent_context.get_current_session_id",
+            lambda: "sess-call",
+        )
+
+        response = MagicMock()
+        response.usage = None
+        mock_model = AsyncMock(return_value=response)
+        mock_model.model = "qwen3.7-max"
+        mock_model.context_size = 1_000_000
+        wrapper = TokenRecordingModelWrapper(
+            provider_id="dashscope",
+            model=mock_model,
+        )
+
+        result = await wrapper(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+        )
+
+        assert result is response
+        span = json.loads(path.read_text(encoding="utf-8").strip())
+        assert span["attributes"]["session_id"] == "sess-call"
+        assert "gen_ai.usage.input_tokens" not in span["attributes"]

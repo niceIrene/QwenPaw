@@ -126,6 +126,55 @@ def _process_memory_section(
 # ---------------------------------------------------------------------------
 
 
+def _codeact_config(ctx: "HookContext") -> Any | None:
+    """Return the agent's ``codeact`` config, if present."""
+    extras = getattr(ctx, "extras", {}) or {}
+    agent_config = extras.get("agent_config")
+    if agent_config is None:
+        return None
+    return getattr(agent_config, "codeact", None)
+
+
+def _codeact_enabled(ctx: "HookContext") -> bool:
+    codeact = _codeact_config(ctx)
+    return bool(codeact is not None and getattr(codeact, "enabled", False))
+
+
+_CODEACT_IDENTITY_DEFAULT = """\
+# Role
+
+You are an autonomous task-execution agent. You receive a concrete task and
+complete it end-to-end in the environment you are given, using the tools
+available to you.
+
+Operating principles:
+- Read the task carefully; explore the environment (files, commands,
+  documentation) before acting.
+- Work step by step; keep changes minimal and focused on the task.
+- Verify results before finishing: run the tests, inspect outputs, or
+  otherwise confirm the task is actually done.
+- If the task is ambiguous, pick the most reasonable interpretation, state
+  your assumption, and proceed. Stop only if the task is impossible as
+  stated — then say exactly what is missing.\
+"""
+
+
+class CodeActIdentityContributor(SyncPromptContributor):
+    """Inject the neutral task-execution identity when CodeAct mode is on."""
+
+    name = "codeact_identity"
+    priority = 6
+
+    def contribute_sync(self, ctx: "HookContext") -> str | None:
+        codeact = _codeact_config(ctx)
+        if codeact is None or not getattr(codeact, "enabled", False):
+            return None
+        text = getattr(codeact, "identity_text", None) or (
+            _CODEACT_IDENTITY_DEFAULT
+        )
+        return text.strip() or None
+
+
 class AgentIdentityContributor(SyncPromptContributor):
     """Prepend agent identity header when ``agent_id`` is set."""
 
@@ -214,6 +263,9 @@ class WorkspacePromptFilesContributor(SyncPromptContributor):
     priority = 10
 
     def contribute_sync(self, ctx: "HookContext") -> str | None:
+        # CodeAct mode suppresses the personal-assistant workspace files.
+        if _codeact_enabled(ctx):
+            return None
         wd = getattr(ctx, "workspace_dir", None)
         if not wd:
             return None
@@ -277,11 +329,20 @@ class CodingModeContributor(SyncPromptContributor):
         cm = getattr(agent_config, "coding_mode", None)
         if not cm or not getattr(cm, "enabled", False):
             return None
-        from ..modes.coding import _CODING_SYSTEM_PROMPT_TEMPLATE
+        from ..modes.coding import (
+            _CODING_SYSTEM_PROMPT_TEMPLATE,
+            _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL,
+        )
 
+        persona = str(getattr(cm, "persona", "full") or "full").strip().lower()
+        template = (
+            _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL
+            if persona == "minimal"
+            else _CODING_SYSTEM_PROMPT_TEMPLATE
+        )
         workspace_dir = str(getattr(ctx, "workspace_dir", "") or "(unknown)")
         project_dir = self._resolve_project_dir(agent_config) or workspace_dir
-        return _CODING_SYSTEM_PROMPT_TEMPLATE.format(
+        return template.format(
             project_dir=project_dir,
             workspace_dir=workspace_dir,
         )
@@ -331,8 +392,14 @@ class ScrollContextContributor(SyncPromptContributor):
             return None
         from ..agents.context.scroll.prompt import build_scroll_system_prompt
 
+        codeact = getattr(agent_config, "codeact", None)
+        repl_only = bool(
+            codeact
+            and getattr(codeact, "enabled", False)
+            and getattr(codeact, "tool_routing", None) == "repl-only"
+        )
         language = getattr(agent_config, "language", "en")
-        return build_scroll_system_prompt(language)
+        return build_scroll_system_prompt(language, repl_only=repl_only)
 
 
 class EnvContextContributor(SyncPromptContributor):
@@ -365,6 +432,7 @@ class DriverPolicyHintContributor(SyncPromptContributor):
 
 _ALL_CONTRIBUTORS = (
     AgentIdentityContributor,
+    CodeActIdentityContributor,
     WorkspacePromptFilesContributor,
     MultimodalHintContributor,
     CodingModeContributor,
@@ -384,6 +452,7 @@ def build_default_prompt_manager() -> PromptManager:
 
 __all__ = [
     "AgentIdentityContributor",
+    "CodeActIdentityContributor",
     "AgentsMdContributor",
     "SoulMdContributor",
     "ProfileMdContributor",

@@ -51,9 +51,10 @@ def _resolve_codeact_mode(
     - ``required``: only ``repl_exec`` is exposed to the model.
 
     The request-level ``codeact_mode`` wins; the legacy boolean
-    ``codeact_repl_only=True`` maps to ``required``; an agent-config
-    ``codeact_mode`` attribute (when present) acts as a configured
-    default; anything unrecognized falls back to ``auto``.
+    ``codeact_repl_only=True`` maps to ``required``; the agent-config
+    ``codeact`` section (``CodeActConfig``, when enabled) maps its
+    ``tool_routing`` — repl-only→required, hybrid→auto, off→off;
+    anything unrecognized falls back to ``auto``.
     """
     context = request_context or {}
     explicit = _normalize_codeact_mode(context.get("codeact_mode"))
@@ -66,11 +67,15 @@ def _resolve_codeact_mode(
         )
     if context.get("codeact_repl_only") is True:
         return CODEACT_MODE_REQUIRED
-    configured = _normalize_codeact_mode(
-        getattr(agent_config, "codeact_mode", None),
-    )
-    if configured is not None:
-        return configured
+    codeact = getattr(agent_config, "codeact", None)
+    if codeact is not None and getattr(codeact, "enabled", False):
+        routing = {
+            "repl-only": CODEACT_MODE_REQUIRED,
+            "hybrid": CODEACT_MODE_AUTO,
+            "off": CODEACT_MODE_OFF,
+        }.get(getattr(codeact, "tool_routing", None))
+        if routing is not None:
+            return routing
     return CODEACT_MODE_AUTO
 
 
@@ -428,6 +433,7 @@ class AgentBuilder:
             agent_config,
             model,
             offloader=offloader,
+            governor=governor,
         )
         # Eviction and recall must live or die together. The structured
         # recall_history tool reads history in-process (no sandbox needed),
@@ -997,13 +1003,16 @@ class AgentBuilder:
         agent_config: Any,
         model: Any,
         offloader: Any = None,
+        governor: Any = None,
     ) -> Any:
         """Build the scroll context strategy, or None when not selected.
 
         Returns ``None`` for the native strategy (the default) so nothing
         changes unless ``light_context_config.strategy == "scroll"``. The
         shared ``offloader`` is forwarded so scroll can archive evicted turns
-        to ``dialog/*.jsonl`` (``offload_dialog``, on by default).
+        to ``dialog/*.jsonl`` (``offload_dialog``, on by default). The
+        ``governor`` enables the recall tool's shared-kernel backend and its
+        sandbox mounts.
         """
         workspace = getattr(ctx, "workspace", None)
         workspace_dir = (
@@ -1030,6 +1039,7 @@ class AgentBuilder:
             session_id=session_id,
             agent_id=agent_id,
             offloader=offloader,
+            governor=governor,
         )
 
     @staticmethod
@@ -1068,9 +1078,12 @@ class AgentBuilder:
         offered to the model in this build.
 
         The REPL runs model-authored Python and so needs a sandbox. It is
-        worth registering only when one is actually usable — meaning the
-        governor's platform probe found a sandbox AND the global sandbox
-        switch is enabled — or when the operator explicitly opted into
+        worth registering only when one is actually usable. The check is the
+        same container-friendly probe that gates ``repl_exec`` registration
+        (``repl_sandbox_available`` — global switch on plus a working
+        Seatbelt/Bubblewrap backend, including the CodeAct Bubblewrap profile
+        that works inside Harbor/docker where the governor's startup
+        capability probe fails) — or an explicit operator opt-in to
         unsandboxed recall (both the
         ``QWENPAW_ALLOW_UNSANDBOXED_RECALL`` env var and
         ``scroll_config.allow_unsandboxed``, via
@@ -1093,16 +1106,13 @@ class AgentBuilder:
         is off. Rebuild the agent to change which tools are offered.
         """
         if governor is not None:
-            sandbox_usable = getattr(governor, "sandbox_usable", None)
-            if sandbox_usable is None:
-                # Compatibility for lightweight/custom governor objects that
-                # predate the effective-usability property.
-                sandbox_usable = getattr(
-                    governor,
-                    "sandbox_available",
-                    False,
-                )
-            if sandbox_usable:
+            from ..repl.kernel_manager import repl_sandbox_available
+
+            available, _reason = repl_sandbox_available(
+                governor,
+                preflight=True,
+            )
+            if available:
                 return True
         try:
             from ..agents.context import scroll_unsandboxed_allowed

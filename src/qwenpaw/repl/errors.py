@@ -55,8 +55,8 @@ RETRYABLE_KINDS = frozenset(
 DEFAULT_SUGGESTIONS: dict[str, str] = {
     "syntax_error": "Fix the Python syntax and re-run the corrected cell.",
     "runtime_error": (
-        "Inspect the traceback, fix the code, and retry. Use peek()/ls_vars() "
-        "to check retained state."
+        "Inspect the traceback, fix the code, and retry. Print type/len of "
+        "retained variables to check state."
     ),
     "tool_not_found": (
         "The tool is unavailable. Use paw.list_tools()/paw.search_tools() to "
@@ -81,8 +81,8 @@ DEFAULT_SUGGESTIONS: dict[str, str] = {
         "setup cells or restore persisted variables."
     ),
     "result_too_large": (
-        "The result is too large to return. Keep it in a variable and inspect "
-        "a bounded slice with peek()."
+        "The result is too large to return. Keep it in a variable and print "
+        "a bounded slice."
     ),
     "budget_exhausted": (
         "The cell budget is exhausted. Answer using retained results."

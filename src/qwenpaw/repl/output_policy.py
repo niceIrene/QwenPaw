@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_STDOUT_LIMIT = 2048
+DEFAULT_STDOUT_LIMIT = 8192
 DEFAULT_TRACEBACK_LIMIT = 16 * 1024
 
 # Output display policy for the final cell expression (roadmap §2.3).
@@ -30,7 +29,9 @@ def validate_display(display: Any) -> str:
     )
 
 
-def render_last_expression(value: Any, display: str = DEFAULT_DISPLAY) -> str | None:
+def render_last_expression(
+    value: Any, display: str = DEFAULT_DISPLAY
+) -> str | None:
     """Render the final cell expression according to the display policy.
 
     - ``none``:    nothing is shown (returns ``None``);
@@ -108,8 +109,9 @@ def bound_output(
     summary = (
         f"[output {len(encoded)} bytes saved to {relative.as_posix()}; "
         "first 8 lines follow. The full spill is archival: keep using the "
-        "original REPL variables, or inspect a bounded slice with "
-        f"peek_file({relative.as_posix()!r}); do not print the whole spill.]\n"
+        "original REPL variables, or read a bounded slice with "
+        f"pathlib.Path({relative.as_posix()!r}).read_text()[:2000]; "
+        "do not print the whole spill.]\n"
         f"{head}"
     )
     # A single pathological first line must not defeat the hard context cap.
@@ -134,29 +136,6 @@ def bound_traceback(
     return f"{head}\n...[traceback truncated]...\n{tail}"
 
 
-def safe_save(
-    obj: object,
-    relpath: str,
-    *,
-    workspace: Path,
-) -> str:
-    """Persist JSON-compatible data or text inside the workspace."""
-    import json
-
-    destination = _safe_workspace_path(workspace, relpath)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(obj, str):
-        destination.write_text(obj, encoding="utf-8")
-    elif isinstance(obj, bytes):
-        destination.write_bytes(obj)
-    else:
-        destination.write_text(
-            json.dumps(obj, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
-    return os.path.relpath(destination, workspace)
-
-
 __all__ = [
     "BoundedOutput",
     "DEFAULT_DISPLAY",
@@ -167,6 +146,5 @@ __all__ = [
     "bound_output",
     "bound_traceback",
     "render_last_expression",
-    "safe_save",
     "validate_display",
 ]

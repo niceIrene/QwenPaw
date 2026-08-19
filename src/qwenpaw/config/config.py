@@ -1666,6 +1666,69 @@ class CodingModeConfig(BaseModel):
             "None means use the default workspace_dir."
         ),
     )
+    persona: str = Field(
+        default="full",
+        description=(
+            "Coding Mode system prompt persona. 'full' documents the file / "
+            "shell / LSP tool suite; 'minimal' is for REPL-only sessions "
+            "where repl_exec is the only top-level tool."
+        ),
+    )
+
+
+class CodeActConfig(BaseModel):
+    """CodeAct task-execution mode: neutral identity, PA stack off, REPL
+    kernel.
+
+    Subsumes the deprecated GeneralHarnessConfig. tool_routing:
+    'repl-only' (only repl_exec top-level, minimal persona),
+    'hybrid' (repl_exec + direct tools, full persona),
+    'off' (identity only; benchmark react baseline).
+    Note: non-'off' routing forces coding_mode.enabled=True, which the
+    product UI shows as Coding Mode on — accepted for benchmark agents.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description=(
+            "Run this agent in CodeAct mode: suppress the "
+            "personal-assistant prompt stack and inject a neutral "
+            "task-execution identity."
+        ),
+    )
+    tool_routing: Literal["repl-only", "hybrid", "off"] = Field(
+        default="repl-only",
+        description=(
+            "Tool routing for CodeAct mode. 'repl-only': repl_exec is the "
+            "only top-level tool (minimal persona). 'hybrid': repl_exec "
+            "plus direct tools (full persona). 'off': identity only, no "
+            "REPL tool (react baseline)."
+        ),
+    )
+    identity_text: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional override for the CodeAct identity text injected into "
+            "the system prompt. None uses the built-in default."
+        ),
+    )
+
+
+class GeneralHarnessConfig(BaseModel):
+    """Deprecated: superseded by CodeActConfig.
+
+    Retained only so pre-migration agent.json files still validate; the
+    load path migrates these settings into ``codeact`` and drops this key.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Deprecated, migrated to codeact.enabled on load.",
+    )
+    identity_text: Optional[str] = Field(
+        default=None,
+        description="Deprecated, migrated to codeact.identity_text on load.",
+    )
 
 
 class AgentProfileConfig(BaseModel):
@@ -1760,6 +1823,17 @@ class AgentProfileConfig(BaseModel):
     coding_mode: CodingModeConfig = Field(
         default_factory=CodingModeConfig,
         description="Coding Mode configuration for this agent",
+    )
+    codeact: CodeActConfig = Field(
+        default_factory=CodeActConfig,
+        description="CodeAct task-execution mode configuration for this agent",
+    )
+    general_harness: Optional[GeneralHarnessConfig] = Field(
+        default=None,
+        description=(
+            "Deprecated, superseded by 'codeact'. Migrated on load; kept "
+            "Optional so migrated configs do not write the key back."
+        ),
     )
 
 
@@ -2711,6 +2785,47 @@ def migrate_channel_display_fields(channels: object) -> bool:
     return migrated
 
 
+def migrate_general_harness_to_codeact(data: object) -> bool:
+    """Migrate deprecated general_harness / codeact_mode keys in-place.
+
+    ``general_harness`` (enabled + identity_text) maps onto ``codeact``
+    with tool_routing='repl-only' (the only routing the harness ever
+    shipped with). The legacy string ``codeact_mode`` attribute maps
+    off→off / auto→hybrid / required→repl-only. An existing ``codeact``
+    section wins wholesale; legacy keys are always popped.
+    """
+    if not isinstance(data, dict):
+        return False
+    legacy = data.pop("general_harness", None)
+    legacy_mode = data.pop("codeact_mode", None)
+    if legacy is None and legacy_mode is None:
+        return False
+    if "codeact" in data:
+        return True
+    codeact: dict = {}
+    if isinstance(legacy, dict) and legacy.get("enabled"):
+        codeact["enabled"] = True
+        identity = legacy.get("identity_text")
+        if identity is not None:
+            codeact["identity_text"] = identity
+        codeact["tool_routing"] = "repl-only"
+    routing = (
+        {
+            "off": "off",
+            "auto": "hybrid",
+            "required": "repl-only",
+        }.get(legacy_mode)
+        if isinstance(legacy_mode, str)
+        else None
+    )
+    if routing is not None:
+        codeact["enabled"] = True
+        codeact["tool_routing"] = routing
+    if codeact:
+        data["codeact"] = codeact
+    return True
+
+
 def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
     agent_id: str,
 ) -> AgentProfileConfig:
@@ -2790,15 +2905,25 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
             display_migrated = False
             access_control_migrated = False
 
-        if weixin_migrated or display_migrated or access_control_migrated:
+        codeact_migrated = migrate_general_harness_to_codeact(data)
+
+        if (
+            weixin_migrated
+            or display_migrated
+            or access_control_migrated
+            or codeact_migrated
+        ):
             try:
-                if weixin_migrated or display_migrated:
+                if weixin_migrated or display_migrated or codeact_migrated:
                     import uuid as _uuid
                     import shutil as _shutil
 
-                    migration_name = (
-                        "channel-display" if display_migrated else "weixin"
-                    )
+                    if display_migrated:
+                        migration_name = "channel-display"
+                    elif codeact_migrated:
+                        migration_name = "codeact"
+                    else:
+                        migration_name = "weixin"
                     backup_path = agent_config_path.with_suffix(
                         f".{_uuid.uuid4().hex[:8]}."
                         f"{migration_name}-migrate.bak",

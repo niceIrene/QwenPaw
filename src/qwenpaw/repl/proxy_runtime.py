@@ -11,7 +11,7 @@ import sys
 import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any, Protocol
 
 from .daemon import (
@@ -19,12 +19,9 @@ from .daemon import (
     daemon_status,
     start_daemon as daemon_start,
 )
-from .output_policy import _safe_workspace_path, safe_save
-from .persistence import (
-    describe_variable,
-    persist_variable,
-    restore_variable,
-)
+from .output_policy import _safe_workspace_path
+
+CELL_MODULE_NAME = "__qwenpaw_repl__"
 
 
 class PawToolError(RuntimeError):
@@ -238,9 +235,7 @@ class ToolNamespace:
         Every whitespace-separated token must appear in the tool's path,
         name, or description for the tool to match.
         """
-        tokens = [
-            token.lower() for token in str(query or "").split() if token
-        ]
+        tokens = [token.lower() for token in str(query or "").split() if token]
         if not tokens:
             return []
         matches: list[dict[str, Any]] = []
@@ -265,89 +260,27 @@ class ToolNamespace:
         }
 
 
-def _compact_value(
-    obj: Any,
-    *,
-    depth: int = 0,
-    max_items: int = 3,
-) -> Any:
-    """Project nested values into a small JSON-compatible sample."""
-
-    if obj is None or isinstance(obj, (bool, int, float)):
-        return obj
-    if isinstance(obj, str):
-        return obj[:120]
-    if isinstance(obj, bytes):
-        return repr(obj[:80])
-    if depth >= 2:
-        return f"<{type(obj).__name__}>"
-    limit = max_items if depth == 0 else min(max_items, 3)
-    if isinstance(obj, Mapping):
-        return {
-            str(key): _compact_value(
-                value,
-                depth=depth + 1,
-                max_items=max_items,
-            )
-            for key, value in list(obj.items())[:limit]
-        }
-    if isinstance(obj, (list, tuple)):
-        return [
-            _compact_value(
-                value,
-                depth=depth + 1,
-                max_items=max_items,
-            )
-            for value in obj[:limit]
-        ]
-    return repr(obj)[:120]
-
-
-def compact_peek(obj: Any, max_items: int = 3) -> str:
-    """Return a recursively bounded JSON preview of a retained value."""
-
-    if (
-        isinstance(max_items, bool)
-        or not isinstance(max_items, int)
-        or not 1 <= max_items <= 10
-    ):
-        raise ValueError("max_items must be an integer between 1 and 10")
-
-    result: dict[str, Any] = {"type": type(obj).__name__}
-    try:
-        result["len"] = len(obj)  # type: ignore[arg-type]
-    except (TypeError, AttributeError):
-        pass
-    shape = getattr(obj, "shape", None)
-    if shape is not None:
-        try:
-            result["shape"] = list(shape)
-        except TypeError:
-            result["shape"] = str(shape)
-    result["sample"] = _compact_value(obj, max_items=max_items)
-    return json.dumps(result, ensure_ascii=False, default=str)
-
-
-def _approx_size(obj: Any) -> int:
-    try:
-        return sys.getsizeof(obj)
-    except TypeError:
-        return 0
-
-
 def build_namespace(
     channel: KernelChannel,
     workspace: Path,
     tools: list[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], Callable[[list[Mapping[str, Any]]], None]]:
     """Build the persistent user namespace and its tool-list updater."""
-    namespace: dict[str, Any] = {
-        "__name__": "__qwenpaw_repl__",
-        "json": json,
-        "pathlib": __import__("pathlib"),
-        "collections": collections,
-        "re": re,
-    }
+    # The namespace is the __dict__ of a real module registered in
+    # sys.modules.  Cell-defined functions/classes therefore pickle by
+    # reference: fork-based multiprocessing children inherit sys.modules
+    # and can resolve ``__qwenpaw_repl__`` while unpickling callables
+    # (spawn/forkserver still cannot import it — fork only).
+    cell_module = sys.modules.get(CELL_MODULE_NAME)
+    if cell_module is None:
+        cell_module = ModuleType(CELL_MODULE_NAME)
+        sys.modules[CELL_MODULE_NAME] = cell_module
+    namespace: dict[str, Any] = cell_module.__dict__
+    namespace["__name__"] = CELL_MODULE_NAME
+    namespace["json"] = json
+    namespace["pathlib"] = __import__("pathlib")
+    namespace["collections"] = collections
+    namespace["re"] = re
     try:
         namespace["pandas"] = __import__("pandas")
         namespace["pd"] = namespace["pandas"]
@@ -368,7 +301,6 @@ def build_namespace(
             max_bytes,
         ),
     )
-    namespace["peek"] = compact_peek
     namespace["workspace"] = workspace.resolve()
 
     def workspace_path(relpath: str = ".") -> Path:
@@ -378,98 +310,14 @@ def build_namespace(
 
     namespace["workspace_path"] = workspace_path
 
-    def peek_file(
-        relpath: str,
-        max_bytes: int = 1000,
-        offset: int = 0,
-        *,
-        max_chars: int | None = None,
-    ) -> str:
-        """Return a bounded UTF-8 preview of a workspace file.
-
-        ``max_chars`` is a compatibility alias for model-authored code.  It
-        remains capped by the same 2000-byte context-safety limit.
-        """
-
-        if max_chars is not None:
-            if not isinstance(max_chars, int) or max_chars < 1:
-                raise ValueError("max_chars must be a positive integer")
-            if max_bytes != 1000:
-                raise ValueError("pass only one of max_bytes or max_chars")
-            max_bytes = min(max_chars, 2000)
-
-        if not isinstance(max_bytes, int) or not 1 <= max_bytes <= 2000:
-            raise ValueError("max_bytes must be an integer between 1 and 2000")
-        if not isinstance(offset, int) or offset < 0:
-            raise ValueError("offset must be a non-negative integer")
-        source = _safe_workspace_path(workspace, relpath)
-        if not source.is_file():
-            raise ValueError(f"workspace path is not a file: {relpath}")
-        total_bytes = source.stat().st_size
-        with source.open("rb") as handle:
-            handle.seek(offset)
-            sample = handle.read(max_bytes)
-        return json.dumps(
-            {
-                "path": source.relative_to(workspace.resolve()).as_posix(),
-                "offset": offset,
-                "total_bytes": total_bytes,
-                "sample": sample.decode("utf-8", errors="replace"),
-                "has_more": offset + len(sample) < total_bytes,
-            },
-            ensure_ascii=False,
-        )
-
-    namespace["peek_file"] = peek_file
-
     internal_names = frozenset(namespace)
-
-    def ls_vars() -> list[dict[str, Any]]:
-        return [
-            {
-                "name": name,
-                "type": type(value).__name__,
-                "approx_size": _approx_size(value),
-            }
-            for name, value in sorted(namespace.items())
-            if name not in internal_names and not name.startswith("__")
-        ]
-
-    def save(obj: object, relpath: str) -> str:
-        return safe_save(obj, relpath, workspace=workspace)
-
-    def persist(name: str) -> dict[str, Any]:
-        """Persist one session variable to durable workspace storage."""
-        if name not in namespace:
-            raise NameError(f"variable {name!r} is not defined")
-        return persist_variable(name, namespace[name], workspace)
-
-    def restore_var(name: str) -> Any:
-        """Restore a persisted variable back into the session namespace."""
-        namespace[name] = restore_variable(name, workspace)
-        return namespace[name]
-
-    def describe(name: str) -> dict[str, Any]:
-        """Return persisted-variable metadata without loading the payload."""
-        return describe_variable(name, workspace)
 
     def update_tools(updated: list[Mapping[str, Any]]) -> None:
         tool_namespace.update(updated)
 
-    namespace["ls_vars"] = ls_vars
-    namespace["save"] = save
-    namespace["persist"] = persist
-    namespace["restore_var"] = restore_var
-    namespace["describe"] = describe
     namespace["_paw_internal_names"] = internal_names | {
-        "ls_vars",
-        "save",
-        "persist",
-        "restore_var",
-        "describe",
         "workspace",
         "workspace_path",
-        "peek_file",
         "_paw_internal_names",
     }
     return namespace, update_tools
@@ -486,7 +334,6 @@ __all__ = [
     "ToolCallable",
     "ToolNamespace",
     "build_namespace",
-    "compact_peek",
     "new_tool_call_id",
     "sanitize_name",
     "signature_from_schema",

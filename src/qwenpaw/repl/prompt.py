@@ -17,16 +17,17 @@ You have access to `repl_exec`, a persistent, sandboxed Python session.
 - Variables persist across `repl_exec` calls within this session. Assign tool
   results and intermediate data to named variables and reuse them; do not
   recompute or copy values from earlier output text.
+- Imports and loaded data persist too. Do not re-`import` modules already
+  imported in this session, and do not re-read files that are already loaded
+  into variables; reuse the existing variables.
 - Never print a complete large tool result, collection, or file. Assign it to
-  a variable, then inspect only bounded projections: `peek(obj, max_items=3)`
-  for compact previews (max_items is bounded to 1-10) and `ls_vars()` to list
-  retained variables.
-- Use `save(obj, relpath)` or `persist(name)` to keep data that must survive
-  beyond the current kernel (`persist` writes a typed snapshot that
-  `restore_var(name)` can bring back; `describe(name)` reports its metadata).
+  a variable, then print only bounded projections: type/len/shape, head
+  slices, or `.head()` for DataFrames.
 - Explore tools programmatically: `dir(paw.tools)`, `help(tool)`,
   `inspect.signature(tool)`, `paw.list_tools()`, `paw.search_tools(query)`,
-  and `paw.describe_tool(path)`.
+  and `paw.describe_tool(path)`. The tool list is static within a session:
+  call `paw.list_tools()` once, remember its result, and reuse it — do not
+  re-list or repeat keyword searches for a capability you already located.
 - Use `display="none"` when the last expression is irrelevant, and
   `display="full"` only when you explicitly need the complete value of the
   last expression (it still obeys the output budget).

@@ -118,6 +118,7 @@ class KernelHandle:
     stderr_lines: list[str] = field(default_factory=list)
     stderr_task: asyncio.Task[None] | None = None
     reap_task: asyncio.Task[None] | None = None
+    background_task: asyncio.Task[None] | None = None
 
 
 def repl_sandbox_available(
@@ -263,6 +264,9 @@ def _repl_sandbox_config(
         ),
         *_package_mounts(),
     ]
+    extra_mounts = getattr(governor, "_repl_extra_mounts", None)
+    if extra_mounts:
+        mounts.extend(extra_mounts)
     if relaxed:
         extra_writable = os.getenv("QWENPAW_REPL_WRITABLE_PATHS")
         if extra_writable is None:
@@ -633,13 +637,8 @@ class KernelManager:
                 f"CodeAct REPL unavailable (fail-closed): {reason}",
             )
         workspace = workspace.expanduser().resolve()
-        workspace.mkdir(parents=True, exist_ok=True)
         key = _kernel_key(workspace_id, session_id)
         tag = _session_tag(session_id) if session_id else ""
-        runtime_dir = workspace / ".qwenpaw-repl"
-        temporary = runtime_dir / (f"tmp-{tag}" if tag else "tmp")
-        temporary.mkdir(parents=True, exist_ok=True)
-        (workspace / "out").mkdir(parents=True, exist_ok=True)
 
         async with self._manager_lock:
             existing = self._handles.get(key)
@@ -648,6 +647,12 @@ class KernelManager:
             if existing is not None:
                 self._handles.pop(key, None)
                 await self._terminate(existing)
+
+            workspace.mkdir(parents=True, exist_ok=True)
+            runtime_dir = workspace / ".qwenpaw-repl"
+            temporary = runtime_dir / (f"tmp-{tag}" if tag else "tmp")
+            temporary.mkdir(parents=True, exist_ok=True)
+            (workspace / "out").mkdir(parents=True, exist_ok=True)
 
             argv, env = self._launch_argv(governor, workspace, temporary)
             try:
@@ -839,6 +844,44 @@ class KernelManager:
 
         display = validate_display(display)
         async with handle.lock:
+            if (
+                handle.background_task is not None
+                and not handle.background_task.done()
+            ):
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(handle.background_task),
+                        timeout=timeout,
+                    )
+                except asyncio.TimeoutError:
+                    return ExecResult(
+                        ok=False,
+                        traceback=(
+                            "[repl] a previous cell is still running after "
+                            f"waiting {timeout:g}s; the kernel stays busy "
+                            "until it finishes. If it will not finish soon, "
+                            "call repl_exec(reset=True) to abandon it and "
+                            "restart the kernel; state restores to the last "
+                            "completed cell."
+                        ),
+                        error=make_error(
+                            "failed",
+                            code="kernel_busy",
+                            message=(
+                                "a previous timed-out cell is still running "
+                                "in the background and is holding the kernel"
+                            ),
+                            retryable=True,
+                            suggestion=(
+                                "Do not resubmit the same code. If the "
+                                "background work should finish soon, retry "
+                                "once; otherwise call repl_exec(reset=True) "
+                                "to abandon it and restart the kernel. State "
+                                "restores to the last completed cell."
+                            ),
+                        ),
+                    )
+            handle.background_task = None
             if handle.process.returncode is not None:
                 raise KernelCrashedError(self._crash_message(handle))
             if handle.reap_task is not None:
@@ -1051,7 +1094,14 @@ class KernelManager:
                         kernel_restarted=False,
                     )
                     return soft
-                await self.cancel(handle)
+                # Detach instead of killing: the cell keeps running in the
+                # background (variables retained) while a drain task consumes
+                # its eventual exec_result. Killing here also deadlocked when
+                # spawned children inherited the kernel pipes.
+                handle.background_task = asyncio.create_task(
+                    self._drain_background_cell(handle, exec_id),
+                    name=f"repl-bg-{handle.key}",
+                )
                 self._append_telemetry(
                     handle,
                     exec_id=exec_id,
@@ -1062,23 +1112,86 @@ class KernelManager:
                     output_bytes=0,
                     spilled=[],
                     vars_delta=[],
-                    kernel_restarted=True,
+                    kernel_restarted=False,
                 )
                 return ExecResult(
                     ok=False,
                     traceback=(
                         f"[repl] execution timed out after {timeout:g}s; "
-                        "kernel killed and all variables lost"
+                        "the cell keeps running in the background and "
+                        "variables are retained. If it will not finish "
+                        "soon, call repl_exec(reset=True) to abandon it "
+                        "and restart the kernel; state restores to the "
+                        "last completed cell."
                     ),
-                    kernel_restarted=True,
                     error=make_error(
                         "timeout",
                         message=(
-                            f"cell exceeded the {timeout:g}s budget and the "
-                            "kernel was killed"
+                            f"cell exceeded the {timeout:g}s budget but was "
+                            "left running; the next repl_exec waits for it "
+                            "to finish before executing"
+                        ),
+                        suggestion=(
+                            "Do not resubmit the same code. If the work "
+                            "should finish soon, wait and retry; otherwise "
+                            "call repl_exec(reset=True) to abandon it and "
+                            "restart the kernel."
                         ),
                     ),
                 )
+
+    async def _drain_background_cell(
+        self,
+        handle: KernelHandle,
+        exec_id: str,
+    ) -> None:
+        """Consume messages until a detached cell's exec_result arrives."""
+        try:
+            while True:
+                try:
+                    message = await self._read(handle, timeout=3600.0)
+                except asyncio.TimeoutError:
+                    if handle.process.returncode is not None:
+                        raise KernelCrashedError(
+                            self._crash_message(handle),
+                        )
+                    continue
+                message_type = message["type"]
+                if message_type == "log":
+                    continue
+                if message_type == "tool_call":
+                    await self._send(
+                        handle,
+                        {
+                            "id": message["id"],
+                            "type": "tool_result",
+                            "ok": False,
+                            "error": make_error(
+                                "interrupted",
+                                message=(
+                                    "cell is running past its timeout; this "
+                                    "tool call was not executed"
+                                ),
+                            ),
+                        },
+                    )
+                    continue
+                if message_type == "exec_result" and message["id"] == exec_id:
+                    handle.last_used = time.monotonic()
+                    self._schedule_reap(handle)
+                    return
+                raise ProtocolError(
+                    "unexpected kernel message during background drain: "
+                    f"{message_type}",
+                )
+        except (KernelCrashedError, ProtocolError, OSError) as exc:
+            logger.warning(
+                "repl[%s]: background cell drain aborted: %s",
+                handle.key,
+                exc,
+            )
+        finally:
+            handle.background_task = None
 
     async def _soft_interrupt(
         self,
@@ -1115,10 +1228,7 @@ class KernelManager:
                 if message_type == "tool_call":
                     await respond_interrupted(message)
                     continue
-                if (
-                    message_type == "exec_result"
-                    and message["id"] == exec_id
-                ):
+                if message_type == "exec_result" and message["id"] == exec_id:
                     handle.last_used = time.monotonic()
                     self._schedule_reap(handle)
                     return ExecResult(
@@ -1189,6 +1299,59 @@ class KernelManager:
             if self._handles.get(handle.key) is handle:
                 self._handles.pop(handle.key, None)
 
+    async def reset_kernel(
+        self,
+        handle: KernelHandle,
+        *,
+        governor: Any,
+        specs: list[dict[str, Any]] | None = None,
+    ) -> KernelHandle:
+        """Abandon a stuck kernel and restart a fresh one (roadmap §2.8).
+
+        A runaway cell that survived the soft interrupt keeps the kernel
+        permanently busy, trapping the caller in a ``kernel_busy`` loop.
+        This is the escape hatch: it cancels the background drain, kills the
+        kernel process, and restarts it. The restart restores the latest
+        snapshot, so retained variables survive and only the stuck cell's
+        partial work is lost. Returns the new handle.
+        """
+        background = handle.background_task
+        if background is not None and not background.done():
+            background.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await background
+        handle.background_task = None
+        await self._terminate(handle)
+        async with self._manager_lock:
+            if self._handles.get(handle.key) is handle:
+                self._handles.pop(handle.key, None)
+        return await self.get_or_start(
+            workspace_id=handle.workspace_id,
+            workspace=handle.workspace,
+            specs=specs if specs is not None else handle.specs,
+            governor=governor,
+            session_id=handle.session_id,
+        )
+
+    async def _wait_exit(
+        self,
+        handle: KernelHandle,
+        timeout: float,
+    ) -> bool:
+        """Wait for the kernel process to exit without requiring pipe EOF.
+
+        ``Process.wait()`` also blocks until stdout/stderr reach EOF, which
+        never happens when detached children inherit the kernel pipes
+        (NO_PIDNS benchmark mode keeps such orphans alive by design).
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while handle.process.returncode is None:
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.05)
+        return True
+
     async def _terminate(self, handle: KernelHandle) -> None:
         if handle.reap_task is not None:
             handle.reap_task.cancel()
@@ -1202,10 +1365,14 @@ class KernelManager:
                         "type": "shutdown",
                     },
                 )
-                await asyncio.wait_for(handle.process.wait(), timeout=2.0)
-            except (asyncio.TimeoutError, BrokenPipeError, KernelCrashedError):
-                handle.process.kill()
-                await handle.process.wait()
+                if not await self._wait_exit(handle, 2.0):
+                    with contextlib.suppress(ProcessLookupError):
+                        handle.process.kill()
+                    await self._wait_exit(handle, 2.0)
+            except (BrokenPipeError, KernelCrashedError):
+                with contextlib.suppress(ProcessLookupError):
+                    handle.process.kill()
+                await self._wait_exit(handle, 2.0)
         if handle.stderr_task is not None:
             handle.stderr_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -1221,6 +1388,11 @@ class KernelManager:
             try:
                 await asyncio.sleep(self.idle_timeout)
                 if handle.lock.locked():
+                    return
+                if (
+                    handle.background_task is not None
+                    and not handle.background_task.done()
+                ):
                     return
                 await self._close_key(handle.key)
             except asyncio.CancelledError:
@@ -1274,6 +1446,20 @@ def get_default_kernel_manager() -> KernelManager:
     return _DEFAULT_MANAGER
 
 
+def register_repl_extra_mounts(governor: Any, mounts: list[Any]) -> None:
+    """Attach extra sandbox mounts honoured at the next kernel launch.
+
+    Other subsystems (e.g. scroll's recall backend, which needs a read-only
+    view of the history store and a writable scratch dir inside the shared
+    kernel) register mounts at build time; ``_repl_sandbox_config`` picks
+    them up whenever the kernel (re)launches for this governor.
+    """
+    if governor is None:
+        return
+    # pylint: disable-next=protected-access
+    governor._repl_extra_mounts = list(mounts)
+
+
 __all__ = [
     "DEFAULT_EXEC_TIMEOUT",
     "DEFAULT_IDLE_TIMEOUT",
@@ -1283,5 +1469,6 @@ __all__ = [
     "KernelManager",
     "KernelUnavailableError",
     "get_default_kernel_manager",
+    "register_repl_extra_mounts",
     "repl_sandbox_available",
 ]
