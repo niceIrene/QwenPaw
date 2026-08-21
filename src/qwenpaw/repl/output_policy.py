@@ -100,9 +100,21 @@ def bound_output(
         return BoundedOutput(text=text)
 
     relative = Path("out") / spill_name
-    destination = _safe_workspace_path(workspace, relative)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(encoded)
+    try:
+        destination = _safe_workspace_path(workspace, relative)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(encoded)
+    except OSError:
+        # The sandbox can remount the workspace read-only; a failed spill must
+        # not fail the cell. Degrade to a truncated inline payload.
+        note = (
+            f"[output {len(encoded)} bytes could not be spilled "
+            "(workspace read-only); truncated to the first bytes below. "
+            "Re-run with a smaller output to see more.]\n"
+        )
+        budget = max(0, limit - len(note.encode("utf-8", errors="replace")))
+        truncated = encoded[:budget].decode("utf-8", errors="ignore")
+        return BoundedOutput(text=note + truncated)
 
     head_lines = text.splitlines(keepends=True)[:8]
     head = "".join(head_lines)
