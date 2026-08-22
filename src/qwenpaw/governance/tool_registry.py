@@ -422,6 +422,17 @@ def _register_non_descriptor_tools(registry: ToolRegistry) -> None:
         sandbox_required=True,
         owner="builtin",
     )
+    # Coding Mode CodeAct REPL. It is mode-scoped and constructed with the
+    # request's ResourceGovernor, so it intentionally stays out of the global
+    # descriptor-collected tool set.
+    register_tool_governance(
+        registry,
+        python_name="repl_exec",
+        tool_type="internal",
+        target_param="",
+        policy_name="ReplExec",
+        owner="builtin",
+    )
     # Memory manager tool — registered dynamically outside agents.tools.
     register_tool_governance(
         registry,

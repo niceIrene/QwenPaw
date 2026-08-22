@@ -81,12 +81,19 @@ class ToolCallSpec:
         agent_id: str,
         session_id: str,
         raw_params: dict[str, Any] | None = None,
+        *,
+        provenance: str = "model",
+        workspace_id: str = "",
+        kernel_task_id: str = "",
     ) -> None:
         self.tool_name = tool_name
         self.target = target
         self.agent_id = agent_id
         self.session_id = session_id
         self.raw_params = raw_params or {}
+        self.provenance = provenance
+        self.workspace_id = workspace_id
+        self.kernel_task_id = kernel_task_id
 
 
 @dataclass

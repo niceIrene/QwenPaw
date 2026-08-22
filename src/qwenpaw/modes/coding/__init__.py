@@ -18,6 +18,7 @@ from ...runtime.hooks import HookBase, HookContext
 from .mixin import (
     CodingModeMixin,
     _CODING_SYSTEM_PROMPT_TEMPLATE,
+    _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL,
     collect_coding_tools,
 )
 
@@ -49,5 +50,6 @@ __all__ = [
     "CodingMode",
     "CodingModeMixin",
     "_CODING_SYSTEM_PROMPT_TEMPLATE",
+    "_CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL",
     "collect_coding_tools",
 ]

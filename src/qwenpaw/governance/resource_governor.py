@@ -147,6 +147,11 @@ class ResourceGovernor:
         """Whether sandbox execution is supported and globally enabled."""
         return self._sandbox_usable()
 
+    @property
+    def sandbox_globally_enabled(self) -> bool:
+        """Whether the operator enabled sandboxing, independent of backend."""
+        return self._sandbox_globally_enabled()
+
     def start(self) -> None:
         """Load policy and probe sandbox capabilities."""
         with get_sync_path_lock(self._policy_path):

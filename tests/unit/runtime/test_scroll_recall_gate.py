@@ -11,14 +11,17 @@ native context management rather than evict history nothing can read back.
 
 ``_scroll_repl_runnable`` — the narrower gate applied once scroll IS wired:
 whether to ALSO offer the Python REPL. It is registered only when a sandbox
-actually exists (governor present AND its probe found one) or unsandboxed
-recall is explicitly opted in. Otherwise it is omitted — on a no-sandbox
-platform it would only fail-closed into a recurring approval prompt — and the
-model recalls through the structured ``recall_history`` tool, which needs no
-sandbox.
+actually exists (governor present AND the container-friendly
+``repl_sandbox_available`` probe — the same one gating ``repl_exec`` — finds
+a working backend) or unsandboxed recall is explicitly opted in. Otherwise it
+is omitted — on a no-sandbox platform it would only fail-closed into a
+recurring approval prompt — and the model recalls through the structured
+``recall_history`` tool, which needs no sandbox.
 """
 
 from types import SimpleNamespace
+
+import pytest
 
 from qwenpaw.runtime.builder import AgentBuilder
 
@@ -74,12 +77,25 @@ def _governor(sandbox_available: bool) -> SimpleNamespace:
     return SimpleNamespace(sandbox_available=sandbox_available)
 
 
-def test_repl_offered_when_sandbox_available():
+@pytest.fixture
+def probe_stub(monkeypatch):
+    """Answer the container-friendly probe from the stub governor's flag."""
+
+    def _fake(governor, *, preflight: bool = False):
+        return bool(getattr(governor, "sandbox_available", False)), "stub"
+
+    monkeypatch.setattr(
+        "qwenpaw.repl.kernel_manager.repl_sandbox_available",
+        _fake,
+    )
+
+
+def test_repl_offered_when_sandbox_available(probe_stub):
     cfg = _agent_config(allow_unsandboxed=False)
     assert AgentBuilder._scroll_repl_runnable(cfg, _governor(True)) is True
 
 
-def test_repl_omitted_when_governor_present_but_no_sandbox():
+def test_repl_omitted_when_governor_present_but_no_sandbox(probe_stub):
     # The reported case: governor is up (so scroll wires and the structured
     # tool is present) but the platform has no sandbox (e.g. Windows without
     # WSL2). The REPL would only fail-closed → approval popup, so omit it.
@@ -87,7 +103,7 @@ def test_repl_omitted_when_governor_present_but_no_sandbox():
     assert AgentBuilder._scroll_repl_runnable(cfg, _governor(False)) is False
 
 
-def test_repl_offered_when_unsandboxed_opt_in(monkeypatch):
+def test_repl_offered_when_unsandboxed_opt_in(monkeypatch, probe_stub):
     # No sandbox, but the operator explicitly opted into unsandboxed recall.
     monkeypatch.setenv("QWENPAW_ALLOW_UNSANDBOXED_RECALL", "1")
     cfg = _agent_config(allow_unsandboxed=True)
@@ -121,7 +137,7 @@ def _scroll(recall_tool, repl_tool) -> SimpleNamespace:
     return SimpleNamespace(recall_tool=recall_tool, repl_tool=repl_tool)
 
 
-def test_no_sandbox_omits_repl_from_registered_tools(monkeypatch):
+def test_no_sandbox_omits_repl_from_registered_tools(monkeypatch, probe_stub):
     monkeypatch.setattr(
         AgentBuilder,
         "_wrap_tool",
@@ -142,7 +158,7 @@ def test_no_sandbox_omits_repl_from_registered_tools(monkeypatch):
     assert extra == ["RECALL_HISTORY"]
 
 
-def test_with_sandbox_registers_both_tools(monkeypatch):
+def test_with_sandbox_registers_both_tools(monkeypatch, probe_stub):
     monkeypatch.setattr(
         AgentBuilder,
         "_wrap_tool",

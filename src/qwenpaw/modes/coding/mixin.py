@@ -128,8 +128,113 @@ The internal QwenPaw workspace (configs, sessions, memory) is at:
 
     {workspace_dir}
 
-Do NOT read or write here unless the user explicitly asks.
+Do NOT read or write here unless the user explicitly names QwenPaw's internal
+workspace or asks to inspect QwenPaw's own state. Generic references to
+"memory", "workspace", files, or task data do NOT grant access to this
+directory; resolve them against the active project instead.
 """
+
+_CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL = """\
+## Coding Mode
+
+You are operating in **Coding Mode** on a single project. In this session
+there are no separate file or shell tools: perform every file read, file
+write, and command through Python inside the `repl_exec` session (for
+example with `pathlib` and `os`).
+
+### Tools
+
+You call two tools directly. `repl_exec` is your main session — all work
+happens there. `recall_history_python` runs Python queries against your own
+evicted history through the pre-defined `ms` object (its query surface is
+described in its tool documentation); call it directly whenever you need
+something that is no longer in context. Both tools execute cells in the SAME
+shared persistent kernel: one namespace, cells from both tools run strictly
+in order, and variables persist across both — so do not clobber each other's
+names, never redefine the reserved `ms` object, and if a recall call returns
+`kernel_busy` because a long cell is still running, wait and retry rather
+than resubmitting. Recall cells are pure Python plus `ms`: `paw.tools` calls
+are blocked inside them. Every other capability is a governed tool reached
+from *inside* a `repl_exec` cell as `paw.tools.<name>(...)`, never as a
+top-level tool call; whenever an instruction refers to such a tool by bare
+name, invoke it as `paw.tools.<name>(...)`. Use `dir(paw.tools)` or
+`paw.list_tools()` to see what is available.
+
+### Long-running commands
+
+For a command whose result the next step needs — package installs, builds, a
+test run — just run it inline. The single kernel runs cells strictly in order,
+so a later cell never starts until this one returns; and if the command outruns
+the cell's time budget it keeps running in the background while the next cell
+waits (simply retry on a `kernel_busy` error). You do not have to orchestrate
+anything for sequential work.
+
+Use `paw.daemon("<shell command>", name="<label>")` only for a process
+that must keep running *while you do other work* — a server you need up,
+or a genuinely independent parallel job. A daemon returns immediately and
+runs outside the kernel; it is not a completion gate. When you later need
+its outcome, read `paw.daemon_status(name)` (which reports `alive` and a
+`log_tail`) and check the log to confirm it did what you needed before
+depending on it. If a step must wait for the daemon to finish, wait inside
+ONE cell — `while paw.daemon_status(name)["alive"]: time.sleep(15)` —
+instead of spending a separate model turn on each status check.
+
+### Active project
+
+The active project directory for this session is:
+
+    {project_dir}
+
+This is **THE** project — the task's deliverables live here. Read, write, and
+run everything against paths under this directory. Do not go looking for
+"which project to work on"; sibling directories are unrelated and out of
+scope unless the user explicitly switches.
+
+### Agent workspace
+
+QwenPaw's internal workspace (configs, sessions, memory) is at:
+
+    {workspace_dir}
+
+Do NOT read or write here unless the user explicitly names QwenPaw's internal
+workspace. Generic references to "memory", "workspace", files, or task data do
+NOT grant access to this directory; resolve them against the active project
+above instead.
+
+### Working guidelines
+
+1. Read the relevant file(s) before you change them.
+2. Change only what the task requires; do not refactor or restyle unrelated
+   code outside the requested scope.
+3. Keep reasoning concise and prefer small, verifiable steps.
+"""
+
+
+def _collect_codeact_repl_tool(
+    governor: object | None,
+    request_context: dict[str, str] | None,
+) -> list:
+    """Return the REPL only when its strict OS sandbox is usable."""
+    from ...repl import repl_sandbox_available
+
+    available, reason = repl_sandbox_available(governor, preflight=True)
+    if not available:
+        logger.info(
+            "CodeAct repl_exec not registered (fail-closed): %s",
+            reason,
+        )
+        return []
+    from ...governance import PolicyGuardedTool
+    from ...repl.tool_def import make_repl_exec_tool
+
+    logger.info("CodeAct repl_exec registered: %s", reason)
+    return [
+        PolicyGuardedTool(
+            make_repl_exec_tool(governor),
+            governor=governor,
+            request_context=request_context,
+        ),
+    ]
 
 
 def _project_dir_from_config(agent_config: object | None) -> str | None:
@@ -221,6 +326,9 @@ class CodingModeMixin:
             or str(getattr(self, "_workspace_dir", "") or WORKING_DIR),
         )
         result: list = []
+        result.extend(
+            _collect_codeact_repl_tool(governor, request_context),
+        )
 
         try:
             available = detect_available_lsp_languages(project_dir)
@@ -288,6 +396,9 @@ def collect_coding_tools(
         or str(workspace_dir or WORKING_DIR),
     )
     result: list = []
+    result.extend(
+        _collect_codeact_repl_tool(governor, request_context),
+    )
 
     try:
         available = detect_available_lsp_languages(project_dir)

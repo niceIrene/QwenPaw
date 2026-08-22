@@ -3,14 +3,16 @@
 
 This is raw conversation-history recall — the agent's own recorded turns
 across its sessions (verbatim). The model recalls history by running Python
-here, not by scrolling back. Each call runs a fresh process (Option A:
-stateless cells) inside the sandbox when a ``sandbox_config`` is supplied —
-mirroring ``execute_shell_command``. The cell preamble builds ``ms`` (the
-durable history ATTACHed read-only + a file-backed scratch DB) from
-:mod:`.memoryspace`.
+here, not by scrolling back. When the shared CodeAct kernel is available the
+cell runs inside it (``ms`` is built once and cached in the kernel
+namespace); otherwise each call falls back to a fresh process (Option A:
+stateless cells) inside a one-shot sandbox — mirroring
+``execute_shell_command``. Either way the cell preamble guarantees a usable
+``ms`` (the durable history ATTACHed read-only + a file-backed scratch DB)
+from :mod:`.memoryspace`.
 
-Python variables do not persist across calls; derived tables do, because the
-``ms`` scratch DB is file-backed under the workspace.
+Tables written through ``ms.sql_exec`` persist in the scratch DB under the
+workspace; do not rely on any other variables surviving across calls.
 """
 
 import asyncio
@@ -18,6 +20,7 @@ import shlex
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from agentscope.message import TextBlock, ToolResultState
@@ -32,11 +35,13 @@ _PKG_DIR = str(Path(__file__).parent)
 
 _DOC = """Recall conversation history via Python — the ADVANCED recall tool.
 
-Prefer `recall_history` for ordinary reads. Use this sandboxed tool for custom
-SQL, scratch tables, session listing, or programmatic cross-referencing.
+Prefer `recall_history` for ordinary reads. Use this tool for custom SQL,
+scratch tables, session listing, or programmatic cross-referencing.
 
-`ms` is ALREADY DEFINED; do not import it. Calls use fresh processes: Python
-variables do NOT persist, but `ms.sql_exec` scratch tables do. Print results.
+`ms` is ALREADY DEFINED; use it directly (do not import it). `ms` itself and
+tables written through `ms.sql_exec` persist across calls; any other variable
+may not (a call can run in a fresh process or in the shared CodeAct kernel —
+do not rely on leftover variables). Only printed stdout is returned.
 
 KEEP STDOUT BOUNDED. Large output is truncated and has no cursor. Filter,
 slice, or page SQL with `LIMIT ? OFFSET ?`; never print broad result sets.
@@ -69,7 +74,6 @@ Helpers return `list[dict]`; text is in `content`. A trailing
   • ms.sql_exec(sql, params)
     Writes only the persistent scratch DB. Always bind values via `params`.
 
-Use `ms.search` and inspect each `turn`; use `ms.expand` for another span.
 For custom paging:
 
     rows = ms.sql_query(
@@ -80,8 +84,6 @@ For custom paging:
     for row in rows:
         print(row["seq"], row["content"][:2000])
 
-Args:
-    source (str): Python source to execute.
 """
 
 
@@ -93,8 +95,15 @@ def make_recall_history_python(
     scratch_root: str,
     timeout_s: int = 300,
     allow_unsandboxed: bool = False,
+    governor: Optional[Any] = None,
 ):
     """Build a ``recall_history_python`` tool bound to one session's history.
+
+    Execution backend: when ``governor`` is supplied and the CodeAct kernel's
+    strict sandbox is usable, cells run in the shared persistent kernel
+    (``ms`` is built once and cached in its namespace). Otherwise the tool
+    falls back to the legacy path — a fresh subprocess per call, wrapped in a
+    one-shot sandbox when ``sandbox_config`` is injected.
 
     ``recall_history_python`` runs model-authored Python. The sandbox is the
     only
@@ -140,10 +149,118 @@ def make_recall_history_python(
         cell.write_text(preamble + "\n" + (source or ""), encoding="utf-8")
         return cell
 
+    def _kernel_preamble() -> str:
+        # Idempotent: rebuild ``ms`` when it is missing (first call, kernel
+        # restart, snapshot restore — sqlite connections are unpicklable so
+        # snapshots skip them) or when model code clobbered the name.
+        return (
+            "from qwenpaw.agents.context.scroll.memoryspace import (\n"
+            "    MemorySpace as _MS,\n"
+            ")\n"
+            "if not isinstance(globals().get('ms'), _MS):\n"
+            "    from pathlib import Path as _P\n"
+            f"    _P({scratch_db!r}).parent.mkdir("
+            "parents=True, exist_ok=True)\n"
+            "    ms = _MS(\n"
+            f"        history_db_path={history_db_path!r},\n"
+            f"        session_id={session_id!r},\n"
+            f"        agent_id={agent_id!r},\n"
+            f"        scratch_db_path={scratch_db!r},\n"
+            "    )\n"
+            "    import sys as _sys\n"
+            "    _sys.modules['ms'] = ms\n"
+        )
+
+    async def _run_kernel(source: str) -> tuple[str, bool] | None:
+        """Run the cell in the shared CodeAct kernel.
+
+        Returns ``(observation, ok)``, or ``None`` when the kernel backend is
+        unavailable and the caller should use the legacy subprocess path.
+        """
+        from ....repl.governance_bridge import ToolForwardingError
+        from ....repl.kernel_manager import (
+            KernelCrashedError,
+            KernelUnavailableError,
+            get_default_kernel_manager,
+            repl_sandbox_available,
+        )
+        from ....repl.tool_def import (  # pylint: disable=protected-access
+            _governed_workspace,
+            _workspace_id,
+        )
+
+        available, _reason = repl_sandbox_available(governor, preflight=True)
+        if not available:
+            return None
+        workspace = _governed_workspace(governor)
+        if workspace is None:
+            return None
+        manager = get_default_kernel_manager()
+        try:
+            handle = await manager.get_or_start(
+                workspace_id=_workspace_id(workspace),
+                workspace=workspace,
+                specs=[],
+                governor=governor,
+                session_id=str(session_id or ""),
+            )
+        except KernelUnavailableError:
+            return None
+
+        async def _blocked_dispatch(
+            exposed_path: str,
+            _args: dict[str, Any],
+            *,
+            kernel_task_id: str,
+        ) -> Any:
+            raise ToolForwardingError(
+                f"failed|paw.tools.{exposed_path} is not available inside "
+                "recall_history_python cells; query via ms directly, or use "
+                "repl_exec for governed tool calls",
+            )
+
+        # Shim bridge: carrying the handle's current specs makes the manager's
+        # spec refresh a no-op, and recall cells stay pure Python + ms.
+        bridge = SimpleNamespace(
+            specs=handle.specs,
+            is_read_only=lambda _path: False,
+            dispatch=_blocked_dispatch,
+        )
+        try:
+            result = await manager.execute(
+                handle,
+                _kernel_preamble() + "\n" + (source or ""),
+                bridge,
+                timeout=float(timeout_s),
+            )
+        except KernelCrashedError as exc:
+            return (
+                "RECALL FAILED — the shared REPL kernel crashed "
+                f"({exc}). The history was NOT read. Retry the query; if "
+                "the kernel stays down, call repl_exec(reset=True) once and "
+                "then retry.",
+                False,
+            )
+        return _format_kernel_observation(result), bool(result.ok)
+
     async def recall_history_python(
         source: str,
         sandbox_config: Optional[Any] = None,
     ) -> ToolChunk:
+        if governor is not None:
+            kernel_outcome = await _run_kernel(source)
+            if kernel_outcome is not None:
+                text, ok = kernel_outcome
+                text, metadata = truncate_text_output(text)
+                return ToolChunk(
+                    content=[TextBlock(type="text", text=text)],
+                    state=(
+                        ToolResultState.SUCCESS
+                        if ok
+                        else ToolResultState.ERROR
+                    ),
+                    metadata=metadata,
+                )
         # Fail closed: without a sandbox there is no isolation, so refuse to
         # run model-authored code unless an operator explicitly opted in.
         if sandbox_config is None and not allow_unsandboxed:
@@ -259,6 +376,48 @@ async def _run_subprocess(
         out.decode("utf-8", "replace"),
         err.decode("utf-8", "replace"),
         proc.returncode or 0,
+    )
+
+
+def _format_kernel_observation(result: Any) -> str:
+    """Render a kernel ``ExecResult`` for the recall tool.
+
+    Same contract as :func:`_format_observation`: a failure must never read
+    as "the history holds nothing".
+    """
+    stdout = (getattr(result, "stdout", "") or "").rstrip()
+    if getattr(result, "ok", False):
+        if stdout:
+            return f"stdout:\n{stdout}"
+        return (
+            "(no output — the cell printed nothing. This is not evidence "
+            "the history is empty: print() your results, or retry with "
+            "different keywords.)"
+        )
+    error = getattr(result, "error", None) or {}
+    if error.get("code") == "kernel_busy":
+        return (
+            "RECALL BUSY — another cell is still running in the shared "
+            "kernel, so this query did NOT run. Do not resubmit the same "
+            "code blindly: wait briefly and retry once; if the other cell "
+            "is clearly stuck, call repl_exec(reset=True) once and then "
+            "retry the query."
+        )
+    detail = (getattr(result, "traceback", "") or "").strip() or str(
+        error.get("message") or "unknown error",
+    )
+    if stdout:
+        return (
+            "RECALL INCOMPLETE — the cell failed AFTER printing the stdout "
+            "below. That output is real, already-retrieved history: use "
+            "it. Fix the code and re-run only for whatever is still "
+            f"missing.\nstdout:\n{stdout}\nerror:\n{detail}"
+        )
+    return (
+        "RECALL FAILED — the history was NOT read. This is an execution "
+        "error, not an empty history: fix the query and retry, or say "
+        "explicitly that you could not retrieve the context. Do not answer "
+        f"as if the history held nothing.\nerror:\n{detail}"
     )
 
 

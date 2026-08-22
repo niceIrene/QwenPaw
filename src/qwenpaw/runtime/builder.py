@@ -25,6 +25,71 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+#: Three-state CodeAct routing modes (roadmap §2.1).
+CODEACT_MODE_OFF = "off"
+CODEACT_MODE_AUTO = "auto"
+CODEACT_MODE_REQUIRED = "required"
+CODEACT_MODES = (CODEACT_MODE_OFF, CODEACT_MODE_AUTO, CODEACT_MODE_REQUIRED)
+
+
+def _normalize_codeact_mode(value: Any) -> str | None:
+    """Return the canonical mode name, or ``None`` when unrecognized."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in CODEACT_MODES:
+            return normalized
+    return None
+
+
+def _resolve_codeact_mode(
+    request_context: dict[str, Any] | None,
+    agent_config: Any = None,
+) -> str:
+    """Resolve the effective CodeAct routing mode (roadmap §2.1).
+
+    - ``off``: no ``repl_exec`` is registered at all.
+    - ``auto``: REPL and normal tools coexist (the default).
+    - ``required``: only ``repl_exec`` is exposed to the model.
+
+    The request-level ``codeact_mode`` wins; the legacy boolean
+    ``codeact_repl_only=True`` maps to ``required``; the agent-config
+    ``codeact`` section (``CodeActConfig``, when enabled) maps its
+    ``tool_routing`` — repl-only→required, hybrid→auto, off→off;
+    anything unrecognized falls back to ``auto``.
+    """
+    context = request_context or {}
+    explicit = _normalize_codeact_mode(context.get("codeact_mode"))
+    if explicit is not None:
+        return explicit
+    if context.get("codeact_mode") is not None:
+        _logger.warning(
+            "Ignoring invalid codeact_mode %r; falling back to defaults",
+            context.get("codeact_mode"),
+        )
+    if context.get("codeact_repl_only") is True:
+        return CODEACT_MODE_REQUIRED
+    codeact = getattr(agent_config, "codeact", None)
+    if codeact is not None and getattr(codeact, "enabled", False):
+        tool_routing = getattr(codeact, "tool_routing", None)
+        if isinstance(tool_routing, str):
+            routing = {
+                "repl-only": CODEACT_MODE_REQUIRED,
+                "hybrid": CODEACT_MODE_AUTO,
+                "off": CODEACT_MODE_OFF,
+            }.get(tool_routing)
+            if routing is not None:
+                return routing
+    return CODEACT_MODE_AUTO
+
+
+def _toolkit_has_repl_exec(toolkit: Any) -> bool:
+    """Return True when the model-facing toolkit exposes ``repl_exec``."""
+    for group in getattr(toolkit, "tool_groups", ()) or ():
+        for tool in getattr(group, "tools", ()) or ():
+            if getattr(tool, "name", None) == "repl_exec":
+                return True
+    return False
+
 
 def _descriptor_for(tool: Any) -> Any | None:
     """Return the descriptor from a tool or its common wrapper attributes."""
@@ -276,6 +341,8 @@ class AgentBuilder:
         agent_id = getattr(ctx, "agent_id", None) or "default"
         agent_config = await run_sync_io(load_agent_config, agent_id)
         request_context = self._build_request_context(ctx)
+        codeact_mode = _resolve_codeact_mode(request_context, agent_config)
+        repl_only = codeact_mode == CODEACT_MODE_REQUIRED
         agent_config = self._apply_request_project(
             agent_config,
             request_context,
@@ -350,6 +417,12 @@ class AgentBuilder:
             request_context,
             governor,
         )
+        if codeact_mode == CODEACT_MODE_OFF:
+            extra_tools = [
+                tool
+                for tool in extra_tools
+                if getattr(tool, "name", None) != "repl_exec"
+            ]
         extra_tools.extend(
             self._collect_visual_compression_tools(
                 agent_config,
@@ -392,6 +465,7 @@ class AgentBuilder:
             agent_config,
             model,
             offloader=offloader,
+            governor=governor,
         )
         # Eviction and recall must live or die together. The structured
         # recall_history tool reads history in-process (no sandbox needed),
@@ -429,25 +503,42 @@ class AgentBuilder:
             extra_tools=extra_tools,
             memory_tools=(
                 memory_manager.list_memory_tools()
-                if memory_manager is not None
+                if memory_manager is not None and not repl_only
                 else None
             ),
             governor=governor,
             ctx=ctx,
             workspace_dir=workspace_dir,
         )
+        forwarding_toolkit = None
+        if repl_only:
+            from ..repl.tool_def import make_repl_only_toolkit
+
+            forwarding_toolkit = toolkit
+            toolkit = make_repl_only_toolkit(toolkit)
+            _logger.info(
+                "CodeAct REPL-only routing enabled: model toolkit exposes "
+                "only repl_exec; nested forwarding retains %d tools",
+                sum(
+                    len(getattr(group, "tools", ()) or ())
+                    for group in forwarding_toolkit.tool_groups
+                ),
+            )
 
         # System prompt.
         sys_prompt = await run_sync_io(
             self.build_prompt,
             ctx,
             agent_config,
+            codeact_mode=codeact_mode,
+            toolkit=toolkit,
         )
 
         middlewares = self._build_middlewares(
             ctx,
             agent_config,
             visual_recovery_store,
+            include_memory=not repl_only,
         )
 
         running_config = agent_config.running
@@ -476,6 +567,17 @@ class AgentBuilder:
             effective_skills=effective_skills,
             governor=governor,
         )
+        # CodeAct tools are collected before Toolkit and AgentState exist.
+        # Bind both request-scoped objects now so nested paw.tools calls do
+        # not depend on ContextVars surviving AgentScope's tool task boundary.
+        from ..repl.tool_def import bind_repl_exec_runtime
+
+        bind_repl_exec_runtime(
+            agent.toolkit,
+            agent.state,
+            forwarding_toolkit=forwarding_toolkit,
+            request_context=request_context,
+        )
 
         # Load session state if SessionLoadHook populated it.
         if ctx.session_state:
@@ -492,9 +594,20 @@ class AgentBuilder:
         )
         return agent
 
-    def build_prompt(self, ctx: Any, agent_config: Any = None) -> str:
+    def build_prompt(
+        self,
+        ctx: Any,
+        agent_config: Any = None,
+        *,
+        codeact_mode: str = CODEACT_MODE_OFF,
+        toolkit: Any = None,
+    ) -> str:
         """Build the system prompt via the per-workspace
         :class:`PromptManager`.
+
+        When CodeAct routing is active (``codeact_mode`` != ``off``) and
+        the model-facing ``toolkit`` exposes ``repl_exec``, the stable
+        CodeAct execution-rules section is appended (roadmap §2.2).
         """
         from types import SimpleNamespace
         from ..constant import WORKING_DIR
@@ -530,11 +643,32 @@ class AgentBuilder:
             plugins = getattr(workspace, "plugins", None)
             pm = getattr(plugins, "prompt_manager", None) if plugins else None
             if pm is not None and len(pm) > 0:
-                return pm.build_sync(prompt_ctx)
+                prompt = pm.build_sync(prompt_ctx)
+                return self._append_codeact_prompt(
+                    prompt,
+                    codeact_mode,
+                    toolkit,
+                )
 
         from .prompt_contributors import build_default_prompt_manager
 
-        return build_default_prompt_manager().build_sync(prompt_ctx)
+        prompt = build_default_prompt_manager().build_sync(prompt_ctx)
+        return self._append_codeact_prompt(prompt, codeact_mode, toolkit)
+
+    @staticmethod
+    def _append_codeact_prompt(
+        prompt: str,
+        codeact_mode: str,
+        toolkit: Any,
+    ) -> str:
+        """Append the CodeAct rules when the REPL is exposed (roadmap §2.2)."""
+        if codeact_mode == CODEACT_MODE_OFF or toolkit is None:
+            return prompt
+        if not _toolkit_has_repl_exec(toolkit):
+            return prompt
+        from ..repl.prompt import codeact_prompt_section
+
+        return f"{prompt}\n\n{codeact_prompt_section()}"
 
     def build_model(
         self,
@@ -913,13 +1047,16 @@ class AgentBuilder:
         agent_config: Any,
         model: Any,
         offloader: Any = None,
+        governor: Any = None,
     ) -> Any:
         """Build the scroll context strategy, or None when not selected.
 
         Returns ``None`` for the native strategy (the default) so nothing
         changes unless ``light_context_config.strategy == "scroll"``. The
         shared ``offloader`` is forwarded so scroll can archive evicted turns
-        to ``dialog/*.jsonl`` (``offload_dialog``, on by default).
+        to ``dialog/*.jsonl`` (``offload_dialog``, on by default). The
+        ``governor`` enables the recall tool's shared-kernel backend and its
+        sandbox mounts.
         """
         workspace = getattr(ctx, "workspace", None)
         workspace_dir = (
@@ -947,6 +1084,7 @@ class AgentBuilder:
             session_id=session_id,
             agent_id=agent_id,
             offloader=offloader,
+            governor=governor,
         )
 
     @staticmethod
@@ -985,9 +1123,12 @@ class AgentBuilder:
         offered to the model in this build.
 
         The REPL runs model-authored Python and so needs a sandbox. It is
-        worth registering only when one is actually usable — meaning the
-        governor's platform probe found a sandbox AND the global sandbox
-        switch is enabled — or when the operator explicitly opted into
+        worth registering only when one is actually usable. The check is the
+        same container-friendly probe that gates ``repl_exec`` registration
+        (``repl_sandbox_available`` — global switch on plus a working
+        Seatbelt/Bubblewrap backend, including the CodeAct Bubblewrap profile
+        that works inside Harbor/docker where the governor's startup
+        capability probe fails) — or an explicit operator opt-in to
         unsandboxed recall (both the
         ``QWENPAW_ALLOW_UNSANDBOXED_RECALL`` env var and
         ``scroll_config.allow_unsandboxed``, via
@@ -1010,16 +1151,13 @@ class AgentBuilder:
         is off. Rebuild the agent to change which tools are offered.
         """
         if governor is not None:
-            sandbox_usable = getattr(governor, "sandbox_usable", None)
-            if sandbox_usable is None:
-                # Compatibility for lightweight/custom governor objects that
-                # predate the effective-usability property.
-                sandbox_usable = getattr(
-                    governor,
-                    "sandbox_available",
-                    False,
-                )
-            if sandbox_usable:
+            from ..repl.kernel_manager import repl_sandbox_available
+
+            available, _reason = repl_sandbox_available(
+                governor,
+                preflight=True,
+            )
+            if available:
                 return True
         try:
             from ..agents.context import scroll_unsandboxed_allowed
@@ -1173,6 +1311,8 @@ class AgentBuilder:
         ctx: Any,
         agent_config: Any,
         visual_recovery_store: TurnRecoveryStore | None = None,
+        *,
+        include_memory: bool = True,
     ) -> list[Any]:
         """Build middleware list.
 
@@ -1223,7 +1363,7 @@ class AgentBuilder:
                 )
 
         memory_manager = AgentBuilder._get_memory_manager(ctx)
-        if memory_manager is not None:
+        if include_memory and memory_manager is not None:
             try:
                 build_middlewares = getattr(
                     memory_manager,

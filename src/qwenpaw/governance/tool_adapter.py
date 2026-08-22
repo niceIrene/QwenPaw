@@ -166,6 +166,13 @@ def _build_tc_spec(self: Any) -> ToolCallSpec:
         getattr(self, "name", "Unknown"),
     )
     request_ctx = getattr(self, "_qp_request_context", {}) or {}
+    provenance = None
+    try:
+        from ..repl.governance_bridge import get_code_provenance
+
+        provenance = get_code_provenance()
+    except ImportError:
+        provenance = None
     return ToolCallSpec(
         tool_name=tool_name,
         target=DEFAULT_REGISTRY.extract_target(
@@ -176,6 +183,15 @@ def _build_tc_spec(self: Any) -> ToolCallSpec:
         agent_id=request_ctx.get("agent_id", ""),
         session_id=request_ctx.get("session_id", ""),
         raw_params=params,
+        provenance=(
+            provenance.provenance if provenance is not None else "model"
+        ),
+        workspace_id=(
+            provenance.workspace_id if provenance is not None else ""
+        ),
+        kernel_task_id=(
+            provenance.kernel_task_id if provenance is not None else ""
+        ),
     )
 
 

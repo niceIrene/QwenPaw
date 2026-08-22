@@ -209,7 +209,7 @@ async def test_build_constructs_prompt_in_worker_thread(monkeypatch):
         lambda *_args, **_kwargs: (SimpleNamespace(formatter=None), None),
     )
 
-    def build_prompt(_ctx, _config):
+    def build_prompt(_ctx, _config, **_kwargs):
         prompt_threads.append(threading.get_ident())
         raise RuntimeError("prompt built")
 

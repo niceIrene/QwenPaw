@@ -182,18 +182,91 @@ headline 不代表对整个历史区间的总结。
     真相来源，memory 不是。
 """
 
+# The recall paragraph differs in CodeAct repl-only mode: there the structured
+# ``recall_history`` tool is not in the model's tool list (only ``repl_exec``
+# and ``recall_history_python`` are top-level), so teaching its bare name
+# sends the model after a hidden tool. The repl-only wording teaches the
+# ``ms`` surface instead, which ``recall_history_python`` pre-binds into the
+# shared kernel.
+_SCROLL_RECALL_BLOCK_EN = """\
+search your history with
+``recall_history(op="search", …)``.
+
+RECALL with the ``recall_history`` tool: it reads back your own raw
+conversation turns on demand — ``op="expand"`` for a seq span, ``op="search"``
+to find one by keywords, ``op="recall_tool"`` for a tool call's result. Recall
+defaults to your own history (across all your sessions); you can widen to
+other agents' turns when you mean to."""
+
+_SCROLL_RECALL_BLOCK_EN_REPL_ONLY = """\
+search your history with
+``recall_history_python`` using ``ms.search(...)``.
+
+RECALL with the ``recall_history_python`` tool: pass it a Python cell using
+the pre-bound ``ms`` surface — ``ms.search("keywords", k=10)`` to find turns,
+``ms.expand(lo, hi)`` to read a seq span in full,
+``ms.sql_query("SELECT ... FROM hist.conversation_history ...")`` for
+structured filters, ``ms.days_between(d1, d2)`` for calendar gaps. After the
+first recall call, ``ms`` is also bound inside the shared ``repl_exec``
+kernel. Recall defaults to your own history (across all your sessions); pass
+``all_agents=True`` to widen to other agents' turns."""
+
+_SCROLL_RECALL_BLOCK_ZH = """\
+用 ``recall_history(op="search", …)`` 搜
+你的历史。
+
+用 ``recall_history`` 工具来 RECALL：它按需把你自己的原始对话轮次读回来——
+``op="expand"`` 按 seq 区间读全文，``op="search"`` 按关键词找到 seq，
+``op="recall_tool"`` 重读某次工具调用的结果。recall 默认查你自己的历史（跨你
+的所有会话）；需要时你可以扩大到其他 agent 的轮次。"""
+
+_SCROLL_RECALL_BLOCK_ZH_REPL_ONLY = """\
+用 ``recall_history_python`` 里的 ``ms.search(...)`` 搜
+你的历史。
+
+用 ``recall_history_python`` 工具来 RECALL：传给它一个使用预绑定 ``ms`` 表面的
+Python cell——``ms.search("关键词", k=10)`` 找轮次，``ms.expand(lo, hi)`` 按 seq
+区间读全文，``ms.sql_query("SELECT ... FROM hist.conversation_history ...")``
+做结构化过滤，``ms.days_between(d1, d2)`` 算日期间隔。第一次 recall 调用之后，
+``ms`` 也会绑定到共享的 ``repl_exec`` kernel 里。recall 默认查你自己的历史（跨你
+的所有会话）；传 ``all_agents=True`` 可扩大到其他 agent 的轮次。"""
+
+_REPL_ONLY_RECALL_BLOCKS = {
+    "zh": (_SCROLL_RECALL_BLOCK_ZH, _SCROLL_RECALL_BLOCK_ZH_REPL_ONLY),
+    "en": (_SCROLL_RECALL_BLOCK_EN, _SCROLL_RECALL_BLOCK_EN_REPL_ONLY),
+}
+
 SCROLL_SYSTEM_PROMPT_TEMPLATES = {
     "zh": SCROLL_SYSTEM_PROMPT_ZH,
     "en": SCROLL_SYSTEM_PROMPT,
 }
 
 
-def build_scroll_system_prompt(language: str = "en") -> str:
-    """Return the scroll system prompt for *language*, English when unknown."""
-    return SCROLL_SYSTEM_PROMPT_TEMPLATES.get(
+def build_scroll_system_prompt(
+    language: str = "en",
+    *,
+    repl_only: bool = False,
+) -> str:
+    """Return the scroll system prompt for *language*, English when unknown.
+
+    ``repl_only=True`` (CodeAct repl-only mode) swaps the recall paragraph for
+    ``recall_history_python`` / ``ms`` wording, because the structured
+    ``recall_history`` tool is not exposed top-level in that mode.
+    """
+    text = SCROLL_SYSTEM_PROMPT_TEMPLATES.get(
         language,
         SCROLL_SYSTEM_PROMPT,
     )
+    if repl_only:
+        old, new = _REPL_ONLY_RECALL_BLOCKS.get(
+            language,
+            _REPL_ONLY_RECALL_BLOCKS["en"],
+        )
+        # Drift in the source paragraph must never break prompt assembly;
+        # unit tests pin the block so a mismatch is caught there instead.
+        if old in text:
+            text = text.replace(old, new, 1)
+    return text
 
 
 __all__ = [

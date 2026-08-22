@@ -333,12 +333,14 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     app.state.startup_ready = asyncio.Event()
     app.state.startup_time = startup_start_time
-    from ..browser.execution.kernel import get_default_kernel_manager
+    from ..browser.execution.kernel import (
+        get_default_kernel_manager as get_default_browser_kernel_manager,
+    )
 
     browser_config = load_config(get_config_path()).browser
     _start_browser_runtime(
         app,
-        get_default_kernel_manager(),
+        get_default_browser_kernel_manager(),
         max(0.1, browser_config.idle_ttl_seconds),
     )
     if browser_config.experimental:
@@ -590,6 +592,14 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         from ..agents.tools import shutdown_browser_runtime
 
         await shutdown_browser_runtime()
+
+        # Persistent CodeAct kernels are process-scoped and must not outlive
+        # the application lifespan.
+        from ..repl import (
+            get_default_kernel_manager as get_default_repl_kernel_manager,
+        )
+
+        await get_default_repl_kernel_manager().close_all()
 
         # ==================== Execute Shutdown Hooks ====================
         plugin_registry = getattr(app.state, "plugin_registry", None)
