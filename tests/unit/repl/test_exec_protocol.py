@@ -1,12 +1,14 @@
-"""Exec-server protocol behavior: display, errors, interrupt, restore (§2.3-§2.8)."""
+# -*- coding: utf-8 -*-
+"""Exec-server protocol behavior.
+
+Covers display, errors, interrupt, and restore (§2.3-§2.8).
+"""
 
 from __future__ import annotations
 
 import io
 import json
 from pathlib import Path
-
-import pytest
 
 from qwenpaw.repl import exec_server
 from qwenpaw.repl.protocol import encode_message

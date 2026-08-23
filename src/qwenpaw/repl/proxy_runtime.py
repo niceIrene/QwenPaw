@@ -51,21 +51,16 @@ def sanitize_name(name: str) -> str:
     return sanitized
 
 
-def _schema_annotation(schema: Mapping[str, Any]) -> type[Any]:
-    schema_type = schema.get("type")
-    if schema_type == "string":
-        return str
-    if schema_type == "integer":
-        return int
-    if schema_type == "number":
-        return float
-    if schema_type == "boolean":
-        return bool
-    if schema_type == "array":
-        return list
-    if schema_type == "object":
-        return dict
-    return Any
+def _schema_annotation(schema: Mapping[str, Any]) -> Any:
+    annotations = {
+        "string": str,
+        "integer": int,
+        "number": float,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
+    }
+    return annotations.get(str(schema.get("type")), Any)
 
 
 def signature_from_schema(schema: Mapping[str, Any]) -> inspect.Signature:

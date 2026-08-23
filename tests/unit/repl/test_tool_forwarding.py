@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
 """Main-process tool schema forwarding tests."""
+
+# pylint: disable=protected-access
 
 from __future__ import annotations
 
 import base64
+from collections.abc import Sequence
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +21,7 @@ from qwenpaw.repl.tool_def import make_repl_only_toolkit
 
 
 class FakeToolkit:
-    def __init__(self, schemas: list[dict], tools: list[object]) -> None:
+    def __init__(self, schemas: list[dict], tools: Sequence[object]) -> None:
         self._schemas = schemas
         self.tool_groups = [SimpleNamespace(tools=tools)]
 
@@ -44,7 +48,8 @@ async def test_mcp_tools_use_server_namespace_and_exclusions() -> None:
         name="find.items",
     )
     mcp_tool = SimpleNamespace(
-        name="display__find_items", _capability=capability
+        name="display__find_items",
+        _capability=capability,
     )
     repl = SimpleNamespace(name="repl_exec")
     toolkit = FakeToolkit(
@@ -210,7 +215,7 @@ def test_excluded_tool_points_to_the_structured_channel(tmp_path) -> None:
 
     with pytest.raises(ToolForwardingError, match="structured tool"):
         bridge._resolve_tool(
-            "execute_python"
+            "execute_python",
         )  # pylint: disable=protected-access
 
 

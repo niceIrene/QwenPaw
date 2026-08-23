@@ -14,7 +14,7 @@ import contextvars
 import json
 import mimetypes
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,7 @@ from typing import Any
 from .proxy_runtime import sanitize_name
 
 EXCLUDED_TOOLS = frozenset(
-    {"repl_exec", "execute_python", "execute_python_code"}
+    {"repl_exec", "execute_python", "execute_python_code"},
 )
 
 
@@ -35,9 +35,9 @@ class CodeProvenance:
     provenance: str = "code"
 
 
-_CURRENT_PROVENANCE: contextvars.ContextVar[CodeProvenance | None] = (
-    contextvars.ContextVar("qwenpaw_repl_provenance", default=None)
-)
+_CURRENT_PROVENANCE: contextvars.ContextVar[
+    CodeProvenance | None
+] = contextvars.ContextVar("qwenpaw_repl_provenance", default=None)
 
 
 def get_code_provenance() -> CodeProvenance | None:
@@ -94,7 +94,7 @@ def _mcp_path(tool: Any, fallback_name: str) -> str | None:
     if capability is not None and getattr(capability, "protocol", "") == "mcp":
         server = sanitize_name(str(getattr(capability, "driver_name", "mcp")))
         original = sanitize_name(
-            str(getattr(capability, "name", fallback_name))
+            str(getattr(capability, "name", fallback_name)),
         )
         return f"mcp.{server}.{original}"
     if bool(getattr(tool, "is_mcp", False)):
@@ -182,7 +182,7 @@ class GovernanceBridge:
         agent_state: Any,
         workspace: Path,
         workspace_id: str,
-        specs: list[Mapping[str, Any]],
+        specs: Sequence[Mapping[str, Any]],
     ) -> None:
         self.toolkit = toolkit
         self.agent_state = agent_state
@@ -263,16 +263,19 @@ class GovernanceBridge:
         return name
 
     def _save_media(
-        self, block: Any, call_id: str, position: int
+        self,
+        block: Any,
+        call_id: str,
+        position: int,
     ) -> dict[str, str]:
         source = _block_attr(block, "source")
         media_type = str(
-            _block_attr(source, "media_type", "application/octet-stream")
+            _block_attr(source, "media_type", "application/octet-stream"),
         )
         data = _block_attr(source, "data")
         if not isinstance(data, str):
             raise ToolForwardingError(
-                "binary tool result did not contain base64 data"
+                "binary tool result did not contain base64 data",
             )
         relative = Path("out") / (
             f"tool_{call_id}_{position}{_media_extension(media_type)}"
@@ -280,7 +283,7 @@ class GovernanceBridge:
         destination = (self.workspace / relative).resolve()
         if self.workspace not in destination.parents:
             raise ToolForwardingError(
-                "media result path escaped the workspace"
+                "media result path escaped the workspace",
             )
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(base64.b64decode(data, validate=True))

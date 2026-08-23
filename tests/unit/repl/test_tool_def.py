@@ -1,4 +1,7 @@
+# -*- coding: utf-8 -*-
 """Request-scoped runtime binding for the CodeAct tool."""
+
+# pylint: disable=protected-access,unnecessary-lambda
 
 from __future__ import annotations
 
@@ -16,10 +19,16 @@ from qwenpaw.repl.tool_def import (
 )
 
 
-def test_repl_description_explains_help_lint_and_side_effect_priority() -> None:
-    assert "help(tool) prints documentation and returns None" in REPL_DESCRIPTION
+def test_repl_description_explains_help_lint_and_side_effect_priority() -> (
+    None
+):
+    assert (
+        "help(tool) prints documentation and returns None" in REPL_DESCRIPTION
+    )
     assert "except Exception: pass" in REPL_DESCRIPTION
-    assert "Complete required writes and external mutations" in REPL_DESCRIPTION
+    assert (
+        "Complete required writes and external mutations" in REPL_DESCRIPTION
+    )
 
 
 @pytest.mark.asyncio

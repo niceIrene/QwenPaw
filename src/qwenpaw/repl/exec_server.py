@@ -287,7 +287,10 @@ def _execute_tree(
     if prefix.body:
         exec(compile(prefix, "<cell>", "exec"), namespace)  # noqa: S102
     expression = ast.Expression(tree.body[-1].value)
-    value = eval(compile(expression, "<cell>", "eval"), namespace)  # noqa: S307
+    value = eval(
+        compile(expression, "<cell>", "eval"),
+        namespace,
+    )  # noqa: S307
     if value is not None:
         rendered = render_last_expression(value, display)
         if rendered is not None:
@@ -402,6 +405,7 @@ class _ActiveCell:
         self.interrupt_injected = False
 
 
+# pylint: disable-next=too-many-branches,too-many-statements
 def _serve_message_loop(
     inbox: queue.Queue,
     channel: StdioKernelChannel,
