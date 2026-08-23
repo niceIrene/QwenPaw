@@ -104,6 +104,25 @@ providers.json
 
 # Logs
 logs/
+
+# Research artifact: local inputs, scratch work, and generated evaluations.
+# Keep these on disk, but do not publish them accidentally. Curated release
+# manifests and aggregate results should live under a dedicated tracked path.
+/.pnpm-store/
+/outputs/
+/jobs/
+/harbor/**/environment/chat.json
+/design/
+/scroll-tc-kit/
+/scripts/.scroll-demo/
+/scripts/.scroll-tile-demo/
+/scripts/scroll_context_demo.py
+/scripts/scroll_tile_demo.py
+/console/memory/
+/default_*.json
+/CONTEXT_MANAGEMENT.html
+/2406.18312v4.pdf
+/issue-*.md
 *.log
 
 # vibe coding
