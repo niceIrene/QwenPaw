@@ -23,14 +23,13 @@ def validate_display(display: Any) -> str:
     if isinstance(display, str) and display in DISPLAY_MODES:
         return display
     raise ValueError(
-        "display must be one of none|summary|full, got {display!r}".format(
-            display=display,
-        ),
+        f"display must be one of none|summary|full, got {display!r}",
     )
 
 
 def render_last_expression(
-    value: Any, display: str = DEFAULT_DISPLAY
+    value: Any,
+    display: str = DEFAULT_DISPLAY,
 ) -> str | None:
     """Render the final cell expression according to the display policy.
 
@@ -78,7 +77,7 @@ def _safe_workspace_path(workspace: Path, relative: str | Path) -> Path:
     candidate = Path(relative)
     if candidate.is_absolute() or ".." in candidate.parts:
         raise ValueError(
-            "output path must be relative and cannot contain '..'"
+            "output path must be relative and cannot contain '..'",
         )
     root = workspace.resolve()
     resolved = (root / candidate).resolve()

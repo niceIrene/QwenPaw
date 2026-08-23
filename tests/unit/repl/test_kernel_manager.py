@@ -1,4 +1,7 @@
+# -*- coding: utf-8 -*-
 """End-to-end tests for the persistent OS-sandboxed kernel."""
+
+# pylint: disable=too-many-statements
 
 from __future__ import annotations
 
@@ -141,7 +144,7 @@ async def test_sandboxed_kernel_persists_state_and_blocks_escape(
         )
         network = await manager.execute(
             handle,
-            "import socket\n" "socket.socket().connect(('127.0.0.1', 1))",
+            "import socket\n" + "socket.socket().connect(('127.0.0.1', 1))",
             bridge,
         )
         subprocess = await manager.execute(

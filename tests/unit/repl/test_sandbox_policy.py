@@ -1,4 +1,7 @@
+# -*- coding: utf-8 -*-
 """CodeAct-specific sandbox selection and command-policy tests."""
+
+# pylint: disable=protected-access
 
 from __future__ import annotations
 

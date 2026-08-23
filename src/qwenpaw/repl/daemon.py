@@ -67,6 +67,8 @@ def start_daemon(
     log_path = _log_path(workspace, validated)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab") as log_file:
+        # The child intentionally outlives this function and is tracked by PID.
+        # pylint: disable-next=consider-using-with
         process = subprocess.Popen(  # noqa: S603 - model-owned argv
             argv,
             stdin=subprocess.DEVNULL,

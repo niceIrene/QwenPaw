@@ -100,7 +100,7 @@ deadlock in this sandbox.
 
 def _workspace_id(workspace: Path) -> str:
     return hashlib.sha256(
-        str(workspace.resolve()).encode("utf-8")
+        str(workspace.resolve()).encode("utf-8"),
     ).hexdigest()[:16]
 
 

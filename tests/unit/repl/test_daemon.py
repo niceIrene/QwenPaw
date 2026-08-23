@@ -1,4 +1,7 @@
+# -*- coding: utf-8 -*-
 """Daemon helpers: start/status/log (roadmap P2)."""
+
+# pylint: disable=redefined-outer-name
 
 from __future__ import annotations
 
