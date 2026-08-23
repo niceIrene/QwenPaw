@@ -45,16 +45,12 @@ serving, rate limits, and stochastic generation can affect reruns.
 
 ## Evaluation and reproduction
 
-Evaluation is conducted with
-[AgentZero](https://github.com/agentscope-ai/AgentZero), our open-source
-Harbor-based evaluation framework, so benchmark-specific adapters, task
-definitions, verifiers, and generated runs remain separate from the Scroll
-implementation.
-
-AgentZero pins this repository as a Git submodule and records the exact QwenPaw
-commit used by an evaluation. It provides the Harbor workflows for
-LongMemEval, BEAM, RULER, and LOCA, including environment construction,
-parallel trials, traces, and scoring.
+Implementations for reproducing the reported results are available in
+[AgentZero](https://github.com/agentscope-ai/AgentZero). AgentZero uses Harbor
+and pins this repository as a Git submodule, recording the exact QwenPaw commit
+used by each evaluation. It provides reproduction workflows for LongMemEval,
+BEAM, RULER, and LOCA, including environment construction, parallel trials,
+traces, and scoring.
 
 ```bash
 git clone --recurse-submodules https://github.com/agentscope-ai/AgentZero.git
@@ -66,42 +62,48 @@ source .venv/bin/activate
 uv pip install "harbor==0.18.0" "ijson>=3.3.0"
 ```
 
-Build the pinned Scroll/QwenPaw wheel, then generate a small LongMemEval task
-set:
+Build the pinned Scroll/QwenPaw wheel:
 
 ```bash
 uv build --project qwenpaw --wheel --out-dir dist
 export QWENPAW_WHEEL="$(find "$PWD/dist" -name 'qwenpaw-*.whl' -print -quit)"
 export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
-
-python scripts/download_longmemeval_data.py --dataset oracle
-python benchmarks/longmemeval/generate.py \
-  benchmarks/longmemeval/data/longmemeval_oracle.json \
-  --split smoke \
-  --output local-tasks/longmemeval \
-  --limit 3
 ```
 
-Supply your own evaluated-model and judge API keys, base URLs, and model
-identifiers, then launch Harbor:
+Choose a benchmark (`longmemeval`, `beam`, `ruler`, or `loca`) and prepare its
+task packages using the corresponding AgentZero instructions. Then select its
+task path and adapter:
+
+| Benchmark | Task path | Adapter |
+| --- | --- | --- |
+| LongMemEval | `local-tasks/longmemeval/{split}` | `adapters.qwenpaw.longmemeval:QwenPawLongMemEvalAgent` |
+| BEAM | `local-tasks/beam/{task}` | `adapters.qwenpaw.beam:QwenPawBeamAgent` |
+| RULER | `local-tasks/ruler` | `adapters.qwenpaw.ruler:QwenPawRulerAgent` |
+| LOCA | `local-tasks/loca/{task}` | `adapters.qwenpaw.loca:QwenPawLOCAAgent` |
+
+Supply your own model API key, base URL, and model identifier, replace the
+placeholders below, and launch Harbor:
 
 ```bash
+export BENCHMARK=YOUR_BENCHMARK
+export TASK_PATH=YOUR_TASK_PATH
+export ADAPTER=YOUR_ADAPTER
+
 harbor run \
-  --job-name longmemeval-scroll-smoke \
-  -p local-tasks/longmemeval/smoke \
-  -a adapters.qwenpaw.longmemeval:QwenPawLongMemEvalAgent \
+  --job-name "scroll-${BENCHMARK}" \
+  -p "$TASK_PATH" \
+  -a "$ADAPTER" \
   -m YOUR_PROVIDER_ID/YOUR_MODEL_ID \
   --ae QWENPAW_WHEEL="$QWENPAW_WHEEL" \
   --ae QWENPAW_MODEL_API_KEY="$QWENPAW_MODEL_API_KEY" \
   --ae QWENPAW_MODEL_BASE_URL="$QWENPAW_MODEL_BASE_URL" \
-  --ve LONGMEMEVAL_JUDGE_API_KEY="$LONGMEMEVAL_JUDGE_API_KEY" \
-  --ve LONGMEMEVAL_JUDGE_BASE_URL="$LONGMEMEVAL_JUDGE_BASE_URL" \
-  --ve LONGMEMEVAL_JUDGE_MODEL="$LONGMEMEVAL_JUDGE_MODEL" \
-  -n 3
+  -n 8
 ```
 
-See the AgentZero README for Oracle validation, full S/M runs, other
-benchmarks, concurrency guidance, and result inspection.
+For judged benchmarks, also pass the benchmark-specific judge API key, base
+URL, and model identifier documented in AgentZero. See the AgentZero README
+for task generation, Oracle validation, concurrency guidance, and result
+inspection.
 
 ## License
 

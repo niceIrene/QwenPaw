@@ -1,4 +1,10 @@
-"""Three-state CodeAct mode resolution and prompt injection (roadmap §2.1/§2.2)."""
+# -*- coding: utf-8 -*-
+"""Three-state CodeAct mode resolution and prompt injection.
+
+See roadmap §2.1/§2.2.
+"""
+
+# pylint: disable=protected-access
 
 from __future__ import annotations
 
@@ -18,7 +24,9 @@ from qwenpaw.runtime.builder import (
 def _toolkit(*names: str) -> SimpleNamespace:
     return SimpleNamespace(
         tool_groups=[
-            SimpleNamespace(tools=[SimpleNamespace(name=name) for name in names]),
+            SimpleNamespace(
+                tools=[SimpleNamespace(name=name) for name in names],
+            ),
         ],
     )
 
@@ -100,26 +108,35 @@ class TestCodeactPromptInjection:
 
     def test_no_append_when_mode_off(self) -> None:
         toolkit = _toolkit("repl_exec")
-        assert AgentBuilder._append_codeact_prompt(
-            "base prompt",
-            CODEACT_MODE_OFF,
-            toolkit,
-        ) == "base prompt"
+        assert (
+            AgentBuilder._append_codeact_prompt(
+                "base prompt",
+                CODEACT_MODE_OFF,
+                toolkit,
+            )
+            == "base prompt"
+        )
 
     def test_no_append_when_repl_not_registered(self) -> None:
         toolkit = _toolkit("read_file", "write_file")
-        assert AgentBuilder._append_codeact_prompt(
-            "base prompt",
-            CODEACT_MODE_AUTO,
-            toolkit,
-        ) == "base prompt"
+        assert (
+            AgentBuilder._append_codeact_prompt(
+                "base prompt",
+                CODEACT_MODE_AUTO,
+                toolkit,
+            )
+            == "base prompt"
+        )
 
     def test_no_append_without_toolkit(self) -> None:
-        assert AgentBuilder._append_codeact_prompt(
-            "base prompt",
-            CODEACT_MODE_REQUIRED,
-            None,
-        ) == "base prompt"
+        assert (
+            AgentBuilder._append_codeact_prompt(
+                "base prompt",
+                CODEACT_MODE_REQUIRED,
+                None,
+            )
+            == "base prompt"
+        )
 
     def test_toolkit_probe(self) -> None:
         assert _toolkit_has_repl_exec(_toolkit("repl_exec")) is True

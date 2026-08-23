@@ -73,9 +73,14 @@ DEFAULT_SUGGESTIONS: dict[str, str] = {
     "auth_missing": (
         "Credentials are missing. Ask the user to authenticate; do not retry."
     ),
-    "rate_limited": "Wait or reduce call frequency, then retry a limited number of times.",
+    "rate_limited": (
+        "Wait or reduce call frequency, then retry a limited number of times."
+    ),
     "timeout": "The call timed out. Reduce the workload or retry once.",
-    "interrupted": "The cell was interrupted. Variables are retained; retry if appropriate.",
+    "interrupted": (
+        "The cell was interrupted. Variables are retained; retry if "
+        "appropriate."
+    ),
     "kernel_restarted": (
         "The kernel restarted and variables were lost. Re-run the required "
         "setup cells or restore persisted variables."
@@ -114,10 +119,10 @@ def make_error(
     }
 
 
-def classify_exception(exc: BaseException) -> dict[str, Any]:
+def classify_exception(  # pylint: disable=too-many-return-statements
+    exc: BaseException,
+) -> dict[str, Any]:
     """Map a Python exception raised inside a cell to a structured error."""
-    import ast  # noqa: F401  (kept local to avoid import-time cost)
-
     from .proxy_runtime import PawToolError
 
     if isinstance(exc, PawToolError):

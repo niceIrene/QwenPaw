@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Structured error taxonomy and classification (roadmap §2.4)."""
 
 from __future__ import annotations
@@ -139,7 +140,10 @@ class TestClassifyToolError:
         assert error["retryable"] is True
 
     def test_auth_heuristic(self) -> None:
-        error = classify_tool_error("failed", "401 Unauthorized: token expired")
+        error = classify_tool_error(
+            "failed",
+            "401 Unauthorized: token expired",
+        )
         assert error["kind"] == "auth_missing"
         assert error["retryable"] is False
 

@@ -20,7 +20,6 @@ import shlex
 import sys
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Optional
 
 from agentscope.message import TextBlock, ToolResultState
@@ -205,25 +204,31 @@ def make_recall_history_python(
         except KernelUnavailableError:
             return None
 
-        async def _blocked_dispatch(
-            exposed_path: str,
-            _args: dict[str, Any],
-            *,
-            kernel_task_id: str,
-        ) -> Any:
-            raise ToolForwardingError(
-                f"failed|paw.tools.{exposed_path} is not available inside "
-                "recall_history_python cells; query via ms directly, or use "
-                "repl_exec for governed tool calls",
-            )
-
         # Shim bridge: carrying the handle's current specs makes the manager's
         # spec refresh a no-op, and recall cells stay pure Python + ms.
-        bridge = SimpleNamespace(
-            specs=handle.specs,
-            is_read_only=lambda _path: False,
-            dispatch=_blocked_dispatch,
-        )
+        class _BlockedBridge:
+            def __init__(self) -> None:
+                self.specs = handle.specs
+
+            @staticmethod
+            def is_read_only(_exposed_path: str) -> bool:
+                return False
+
+            @staticmethod
+            async def dispatch(
+                exposed_path: str,
+                _args: dict[str, Any],
+                *,
+                kernel_task_id: str,
+            ) -> Any:
+                del kernel_task_id
+                raise ToolForwardingError(
+                    f"failed|paw.tools.{exposed_path} is not available inside "
+                    "recall_history_python cells; query via ms directly, or "
+                    "use repl_exec for governed tool calls",
+                )
+
+        bridge = _BlockedBridge()
         try:
             result = await manager.execute(
                 handle,

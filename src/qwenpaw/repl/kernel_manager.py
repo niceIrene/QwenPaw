@@ -18,12 +18,12 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ..sandbox import MountSpec, SandboxConfig, SandboxMode
 from .backend import resolve_backend_kind
 from .errors import classify_tool_error, make_error
-from .governance_bridge import GovernanceBridge, ToolForwardingError
+from .governance_bridge import ToolForwardingError
 from .output_policy import DEFAULT_STDOUT_LIMIT
 from .persistence import latest_snapshot_dir
 from .protocol import (
@@ -43,6 +43,24 @@ SOFT_INTERRUPT_GRACE = 5.0
 READ_ONLY_CONCURRENCY = 4
 #: Telemetry wait for one restore_result message after a kernel restart.
 RESTORE_ACK_TIMEOUT = 15.0
+
+
+class KernelToolBridge(Protocol):
+    """Tool-forwarding interface required while servicing a kernel cell."""
+
+    specs: list[dict[str, Any]]
+
+    def is_read_only(self, exposed_path: str) -> bool:
+        """Return whether a tool may be forwarded concurrently."""
+
+    async def dispatch(
+        self,
+        exposed_path: str,
+        args: dict[str, Any],
+        *,
+        kernel_task_id: str,
+    ) -> Any:
+        """Forward a governed tool call."""
 
 
 class KernelUnavailableError(RuntimeError):
@@ -387,7 +405,7 @@ def _bwrap_supports_clearenv(executable: str) -> bool:
     return _CLEARENV_SUPPORTED
 
 
-def _bubblewrap_command(
+def _bubblewrap_command(  # pylint: disable=too-many-branches
     config: SandboxConfig,
     argv: list[str],
 ) -> list[str]:
@@ -468,13 +486,12 @@ def _seatbelt_command(
     from ..sandbox.macos_sandbox import MacOSSandbox
 
     sandbox = MacOSSandbox(config)
-    profile = (
-        sandbox._compile_seatbelt_profile()
-    )  # pylint: disable=protected-access
+    # pylint: disable-next=protected-access
+    profile = sandbox._compile_seatbelt_profile()
     executable = shutil.which("sandbox-exec")
     if executable is None:
         raise KernelUnavailableError(
-            "sandbox-exec disappeared after capability probe"
+            "sandbox-exec disappeared after capability probe",
         )
     return [executable, "-p", profile, *argv]
 
@@ -771,7 +788,9 @@ class KernelManager:
             )
 
     async def _send(
-        self, handle: KernelHandle, message: dict[str, Any]
+        self,
+        handle: KernelHandle,
+        message: dict[str, Any],
     ) -> None:
         if (
             handle.process.stdin is None
@@ -828,11 +847,11 @@ class KernelManager:
         handle.specs = stable_specs
         handle.specs_hash = new_hash
 
-    async def execute(
+    async def execute(  # pylint: disable=too-many-branches,too-many-statements
         self,
         handle: KernelHandle,
         code: str,
-        bridge: GovernanceBridge,
+        bridge: KernelToolBridge,
         *,
         timeout: float = DEFAULT_EXEC_TIMEOUT,
         display: str = "summary",
@@ -1043,7 +1062,7 @@ class KernelManager:
                             exec_id=exec_id,
                             ok=result.ok,
                             error_kind=(
-                                result.error.get("kind")
+                                str(result.error.get("kind") or "")
                                 if result.error
                                 else ""
                             ),
@@ -1154,7 +1173,7 @@ class KernelManager:
                     if handle.process.returncode is not None:
                         raise KernelCrashedError(
                             self._crash_message(handle),
-                        )
+                        ) from None
                     continue
                 message_type = message["type"]
                 if message_type == "log":

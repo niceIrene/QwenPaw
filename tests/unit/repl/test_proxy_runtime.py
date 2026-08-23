@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Kernel proxy discovery, signatures, and workspace helper tests."""
 
 from __future__ import annotations
@@ -44,7 +45,9 @@ def test_proxy_has_typed_signature_doc_and_roundtrip(tmp_path: Path) -> None:
     signature = inspect.signature(search)
     assert signature.parameters["query"].annotation is str
     assert signature.parameters["max_results"].default == 10
-    assert "Search mail" in inspect.getdoc(search)
+    doc = inspect.getdoc(search)
+    assert doc is not None
+    assert "Search mail" in doc
     assert search("urgent", max_results=3) == {"ok": True}
     assert channel.calls == [
         ("mcp.mail.search", {"query": "urgent", "max_results": 3}),
