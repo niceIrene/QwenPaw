@@ -66,14 +66,14 @@ def choose_format(value: Any) -> str:
     """Pick the safest durable format for one variable value."""
     if _is_numpy_array(value):
         try:
-            import numpy  # noqa: F401
+            import numpy as _numpy  # noqa: F401
 
             return "npy"
         except ImportError:
             return "pickle"
     if _is_pandas_dataframe(value):
         try:
-            import pyarrow  # noqa: F401
+            import pyarrow as _pyarrow  # noqa: F401
 
             return "parquet"
         except ImportError:

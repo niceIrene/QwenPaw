@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Display policy for the final cell expression (roadmap §2.3)."""
 
 from __future__ import annotations

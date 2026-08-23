@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=protected-access
+# pylint: disable=protected-access,redefined-outer-name,unused-argument
 """The builder's two scroll recall gates.
 
 ``_scroll_recall_runnable`` — whether scroll is wired at all. The sandboxed

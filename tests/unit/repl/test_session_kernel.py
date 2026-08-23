@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Session-scoped kernel identity and telemetry paths (roadmap §2.5, §2.10)."""
 
 from __future__ import annotations

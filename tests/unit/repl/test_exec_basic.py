@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Persistent execution and lint tests for the P0 exec server."""
 
 from __future__ import annotations

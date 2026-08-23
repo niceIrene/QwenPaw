@@ -1,7 +1,9 @@
+# -*- coding: utf-8 -*-
 """Snapshot persistence format choice and round-trips (roadmap §2.7)."""
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -34,11 +36,7 @@ class TestChooseFormat:
     def test_pandas_prefers_parquet_else_csv(self) -> None:
         pandas = pytest.importorskip("pandas")
         frame = pandas.DataFrame({"a": [1, 2]})
-        expected = "parquet"
-        try:
-            import pyarrow  # noqa: F401
-        except ImportError:
-            expected = "csv"
+        expected = "parquet" if importlib.util.find_spec("pyarrow") else "csv"
         assert choose_format(frame) == expected
 
 

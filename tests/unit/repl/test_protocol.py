@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Protocol contract tests for the P0 CodeAct REPL."""
 
 from __future__ import annotations
