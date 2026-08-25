@@ -1,8 +1,9 @@
 # Scroll: Context as an Environment
 
 This repository is a research fork of
-[QwenPaw](https://github.com/agentscope-ai/QwenPaw) for **Context as an
-Environment: Programmatic Context Management for Long-Horizon Agents**.
+[QwenPaw](https://github.com/agentscope-ai/QwenPaw) for
+[**Context as an Environment: Programmatic Context Management for Long-Horizon
+Agents**](https://arxiv.org/abs/2608.21690).
 
 Scroll stores an agent's complete interaction history outside the model prompt
 in a persistent Session Environment. The model writes Python to search,
@@ -116,11 +117,15 @@ to their own licenses.
 If you use Scroll or this artifact, please cite:
 
 ```bibtex
-@techreport{lin2026context,
-  title       = {Context as an Environment: Programmatic Context Management for Long-Horizon Agents},
-  author      = {Lin, Yin and Ang, Elaine and Zhu, Erkang and Ding, Bolin and Zhou, Jingren},
-  year        = {2026},
-  institution = {Alibaba Group and Columbia University},
-  note        = {Technical Report}
+@article{lin2026context,
+  title         = {Context as an Environment: Programmatic Context Management for Long-Horizon Agents},
+  author        = {Lin, Yin and Ang, Elaine and Zhu, Erkang and Ding, Bolin and Zhou, Jingren},
+  year          = {2026},
+  journal       = {arXiv preprint arXiv:2608.21690},
+  eprint        = {2608.21690},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  doi           = {10.48550/arXiv.2608.21690},
+  url           = {https://arxiv.org/abs/2608.21690}
 }
 ```
