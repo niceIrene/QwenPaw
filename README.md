@@ -53,6 +53,9 @@ used by each evaluation. It provides reproduction workflows for LongMemEval,
 BEAM, RULER, and LOCA, including environment construction, parallel trials,
 traces, and scoring.
 
+> **Note:** The AgentZero repository is currently private and will be open
+> sourced very soon.
+
 ```bash
 git clone --recurse-submodules https://github.com/agentscope-ai/AgentZero.git
 cd AgentZero
