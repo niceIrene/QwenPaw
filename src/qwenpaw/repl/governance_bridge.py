@@ -195,6 +195,7 @@ class GovernanceBridge:
             if item.get("path") and item.get("name")
         }
         self._read_only_paths = self._collect_read_only_paths()
+        self.lm_executor: Any = None
 
     def _collect_read_only_paths(self) -> frozenset[str]:
         """Paths explicitly marked read-only by their ToolDescriptor.
@@ -246,7 +247,11 @@ class GovernanceBridge:
                 "repl_exec requires an active QwenPaw Toolkit and AgentState",
             )
         specs = await build_tool_specs(toolkit, agent_state)
-        return cls(toolkit, agent_state, workspace, workspace_id, specs)
+        bridge = cls(toolkit, agent_state, workspace, workspace_id, specs)
+        from .lm_executor import get_default_lm_executor
+
+        bridge.lm_executor = get_default_lm_executor()
+        return bridge
 
     def _resolve_tool(self, exposed_path: str) -> str:
         if exposed_path in {sanitize_name(item) for item in EXCLUDED_TOOLS}:

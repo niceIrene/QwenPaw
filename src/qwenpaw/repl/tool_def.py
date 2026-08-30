@@ -98,6 +98,68 @@ deadlock in this sandbox.
 """
 
 
+REPL_LM_SECTION = """
+Sub-LM delegation: ``paw.lm`` calls a smaller, cheaper helper model from
+inside a cell. It has no side effects and no memory between calls;
+everything it knows must be passed as context. By default it is inference
+only — if the run enables worker tools, you may pass
+``tools=["read_file", "list_dir", "grep"]`` so the sub-LM reads workspace
+files itself (read-only, workspace-scoped) instead of receiving context.
+- ``paw.lm.call(task, context=[...], schema={...})`` runs one sub-task and
+  returns a TaskResult (dict with status/value/raw/usage; attribute access
+  falls through to value's keys). ``paw.lm.map(task, items=[...])`` fans the
+  same task out over items concurrently, one TaskResult per item, in order.
+- Pass context by reference, not by copy: ``paw.lm.var("name")`` ships a
+  kernel variable, ``paw.lm.file("path", start=..., end=...)`` ships a file
+  slice, ``paw.lm.history(last_n=...)`` ships scroll history rows. Plain
+  strings stay inline.
+- Always give ``schema=`` for machine-read answers; invalid output gets one
+  automatic repair retry, then a schema_invalid error. Prefer an 'unknown'
+  option in the schema over free-text guesses. Reusable contracts can be
+  registered once with ``paw.lm.schema("name", {...})`` and referenced as
+  ``schema="name"`` across calls and cells.
+- ``paw.lm.map(..., item_schema={...})`` validates every item's shape
+  before any tokens are spent; a validation_error lists the bad indices.
+- Each sub-LM call is a fresh context: restate shared background in every
+  task or context, or keep the common prefix in Python and splice it in.
+- Delegate bulk mechanical reading (triage, extraction, classification,
+  summarizing, verification); keep judgment, planning, and tool use to
+  yourself. If a call errors or returns unknown, do it yourself.
+"""
+
+
+def repl_description() -> str:
+    """REPL tool description, with the paw.lm section when configured."""
+    from .lm_executor import lm_configured
+
+    if lm_configured():
+        return REPL_DESCRIPTION + REPL_LM_SECTION
+    return REPL_DESCRIPTION
+
+
+ORCHESTRATE_PRELUDE = """\
+Execute Python in a persistent, sandboxed orchestration kernel.
+
+You are the orchestrator: this kernel is your control plane and `paw.lm`
+sub-LM workers are the data plane. Cell output is capped at ~2 KB — anything
+larger is truncated, so bulk reading MUST reach you through paw.lm results
+or mechanical in-kernel reduction, never through your own prints.
+
+"""
+
+
+def orchestrate_description() -> str:
+    """orchestrate_python description: prelude + mechanics + paw.lm section."""
+    return (
+        ORCHESTRATE_PRELUDE
+        + REPL_DESCRIPTION.split("\n\n", 1)[1].replace(
+            "repl_exec",
+            "orchestrate_python",
+        )
+        + REPL_LM_SECTION
+    )
+
+
 def _workspace_id(workspace: Path) -> str:
     return hashlib.sha256(
         str(workspace.resolve()).encode("utf-8"),
@@ -194,7 +256,10 @@ def make_repl_only_toolkit(toolkit: Any) -> Any:
 
     from agentscope.tool import Toolkit
 
-    top_level = {"repl_exec", "recall_history_python"}
+    from .orchestration import code_tool_name
+
+    code_tool = code_tool_name()
+    top_level = {code_tool, "recall_history_python"}
     kept = [
         tool
         for group in getattr(toolkit, "tool_groups", ()) or ()
@@ -202,17 +267,18 @@ def make_repl_only_toolkit(toolkit: Any) -> Any:
         if getattr(tool, "name", None) in top_level
     ]
     repl_tools = [
-        tool for tool in kept if getattr(tool, "name", None) == "repl_exec"
+        tool for tool in kept if getattr(tool, "name", None) == code_tool
     ]
     if len(repl_tools) != 1:
         raise RuntimeError(
-            "REPL-only routing requires exactly one repl_exec tool; "
+            f"REPL-only routing requires exactly one {code_tool} tool; "
             f"found {len(repl_tools)}",
         )
     if len(kept) == 1:
         _logger.warning(
             "REPL-only routing: recall_history_python not registered "
-            "(no sandbox?) — model toolkit exposes only repl_exec",
+            "(no sandbox?) — model toolkit exposes only %s",
+            code_tool,
         )
     return Toolkit(tools=kept)
 
@@ -242,7 +308,10 @@ def bind_repl_exec_runtime(
     bound = 0
     for group in getattr(toolkit, "tool_groups", ()) or ():
         for tool in getattr(group, "tools", ()) or ():
-            if getattr(tool, "name", None) != "repl_exec":
+            if getattr(tool, "name", None) not in (
+                "repl_exec",
+                "orchestrate_python",
+            ):
                 continue
             func = getattr(tool, "_func", tool)
             binding = getattr(func, "_repl_runtime_binding", None)
@@ -429,27 +498,38 @@ def make_repl_exec_tool(governor: Any) -> Any:
                 ],
             )
 
-    repl_exec.__name__ = "repl_exec"
-    repl_exec.__qualname__ = "repl_exec"
-    repl_exec.__doc__ = REPL_DESCRIPTION
+    from .orchestration import orchestration_mode
+
+    orchestrating = orchestration_mode() is not None
+    tool_name = "orchestrate_python" if orchestrating else "repl_exec"
+    description = (
+        orchestrate_description() if orchestrating else repl_description()
+    )
+    repl_exec.__name__ = tool_name
+    repl_exec.__qualname__ = tool_name
+    repl_exec.__doc__ = description
     setattr(repl_exec, "_repl_runtime_binding", binding)
     setattr(
         repl_exec,
         "_tool_descriptor",
         ToolDescriptor(
-            name="repl_exec",
+            name=tool_name,
             func=repl_exec,
             enabled_by_default=False,
             requires_modes=("coding",),
             async_execution=True,
-            description=REPL_DESCRIPTION.splitlines()[0],
+            description=description.splitlines()[0],
             metadata={"codeact_repl": True},
             governance=ToolGovernanceSpec(
                 tool_type="internal",
                 policy_name="ReplExec",
             ),
             ui=ToolUISpec(
-                description="Persistent sandboxed Python with governed tools",
+                description=(
+                    "Orchestration kernel: Python control plane + paw.lm"
+                    if orchestrating
+                    else "Persistent sandboxed Python with governed tools"
+                ),
                 icon="terminal",
                 display_to_user=True,
             ),
@@ -459,10 +539,12 @@ def make_repl_exec_tool(governor: Any) -> Any:
 
 
 __all__ = [
+    "ORCHESTRATE_PRELUDE",
     "REPL_DESCRIPTION",
     "ReplRuntimeBinding",
     "bind_repl_exec_runtime",
     "make_repl_only_toolkit",
     "make_repl_exec_tool",
+    "orchestrate_description",
     "render_observation",
 ]

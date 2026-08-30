@@ -99,6 +99,15 @@ def _read_pid(workspace: Path, name: str) -> int | None:
 def _process_alive(pid: int | None) -> bool:
     if pid is None or pid <= 0:
         return False
+    # Daemons are never waitpid()ed, so exited children linger as zombies and
+    # os.kill(pid, 0) would report them alive forever. Reap our own child
+    # first: a returned pid means the process has exited.
+    try:
+        reaped, _ = os.waitpid(pid, os.WNOHANG)
+        if reaped == pid:
+            return False
+    except ChildProcessError:
+        pass
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

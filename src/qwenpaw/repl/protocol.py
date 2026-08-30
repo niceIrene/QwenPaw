@@ -23,6 +23,8 @@ MESSAGE_TYPES = frozenset(
         "tool_list_update",
         "shutdown",
         "log",
+        "lm_call",
+        "lm_result",
     },
 )
 

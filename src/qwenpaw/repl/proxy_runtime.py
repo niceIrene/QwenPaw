@@ -19,6 +19,7 @@ from .daemon import (
     daemon_status,
     start_daemon as daemon_start,
 )
+from .lm_runtime import LMNamespace
 from .output_policy import _safe_workspace_path
 
 CELL_MODULE_NAME = "__qwenpaw_repl__"
@@ -39,6 +40,9 @@ class KernelChannel(Protocol):
 
     def call_tool(self, tool: str, args: dict[str, Any]) -> Any:
         """Send a tool call and synchronously wait for its result."""
+
+    def call_lm(self, payload: dict[str, Any]) -> Any:
+        """Send one ``lm_call`` payload and wait for its ``lm_result``."""
 
 
 def sanitize_name(name: str) -> str:
@@ -295,6 +299,9 @@ def build_namespace(
             workspace,
             max_bytes,
         ),
+        # Bound to the live cell module dict: VarRef resolution always sees
+        # the variables as they are at call time (paw.lm design doc §2.2).
+        lm=LMNamespace(channel, namespace, workspace),
     )
     namespace["workspace"] = workspace.resolve()
 

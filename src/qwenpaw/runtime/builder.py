@@ -80,10 +80,13 @@ def _resolve_codeact_mode(
 
 
 def _toolkit_has_repl_exec(toolkit: Any) -> bool:
-    """Return True when the model-facing toolkit exposes ``repl_exec``."""
+    """Return True when the model-facing toolkit exposes the code tool."""
     for group in getattr(toolkit, "tool_groups", ()) or ():
         for tool in getattr(group, "tools", ()) or ():
-            if getattr(tool, "name", None) == "repl_exec":
+            if getattr(tool, "name", None) in (
+                "repl_exec",
+                "orchestrate_python",
+            ):
                 return True
     return False
 

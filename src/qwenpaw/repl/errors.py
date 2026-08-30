@@ -35,6 +35,10 @@ ERROR_KINDS = frozenset(
         "kernel_restarted",
         "result_too_large",
         "budget_exhausted",
+        "lm_unavailable",
+        "context_too_large",
+        "schema_invalid",
+        "dangling_ref",
         "failed",
     },
 )
@@ -91,6 +95,22 @@ DEFAULT_SUGGESTIONS: dict[str, str] = {
     ),
     "budget_exhausted": (
         "The cell budget is exhausted. Answer using retained results."
+    ),
+    "lm_unavailable": (
+        "No sub-LM is configured for this session. Handle the task directly "
+        "in Python instead of delegating."
+    ),
+    "context_too_large": (
+        "The delegated context exceeds the sub-LM limit. Pre-filter in "
+        "Python and pass narrower slices."
+    ),
+    "schema_invalid": (
+        "The sub-LM output failed schema validation. Loosen the schema or "
+        "handle this item directly."
+    ),
+    "dangling_ref": (
+        "The referenced variable or file does not exist. Re-create it or "
+        "fix the reference and retry."
     ),
     "failed": "Inspect the error and retry only if the failure is transient.",
 }

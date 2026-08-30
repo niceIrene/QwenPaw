@@ -25,6 +25,7 @@ from .backend import resolve_backend_kind
 from .errors import classify_tool_error, make_error
 from .governance_bridge import ToolForwardingError
 from .output_policy import DEFAULT_STDOUT_LIMIT
+from .orchestration import ORCHESTRATION_STDOUT_LIMIT, orchestration_mode
 from .persistence import latest_snapshot_dir
 from .protocol import (
     MAX_KERNEL_MESSAGE_BYTES,
@@ -633,6 +634,23 @@ class KernelManager:
             )
         return argv, dict(config.env_vars)
 
+    def _build_init_config(self, session_tag: str) -> dict[str, Any]:
+        """Assemble the kernel init config (orchestration-aware, §9.2)."""
+        config: dict[str, Any] = {
+            "stdout_limit": self.stdout_limit,
+            "backend": resolve_backend_kind(),
+            "session_tag": session_tag,
+        }
+        orch = orchestration_mode()
+        if orch is not None:
+            # Starve direct output so bulk bytes can only arrive via paw.lm.
+            config["stdout_limit"] = min(
+                self.stdout_limit,
+                ORCHESTRATION_STDOUT_LIMIT,
+            )
+            config["plan_required"] = orch == "forced"
+        return config
+
     async def get_or_start(
         self,
         *,
@@ -707,11 +725,7 @@ class KernelManager:
                     "id": f"init-{uuid.uuid4().hex[:8]}",
                     "type": "init",
                     "tools": specs,
-                    "config": {
-                        "stdout_limit": self.stdout_limit,
-                        "backend": resolve_backend_kind(),
-                        "session_tag": tag or "default",
-                    },
+                    "config": self._build_init_config(tag or "default"),
                 },
             )
             await self._maybe_restore_snapshot(handle, tag or "default")
@@ -1004,6 +1018,84 @@ class KernelManager:
                     deadline_holder[0] += loop.time() - call_started
                 await self._send(handle, response)
 
+            async def service_lm_call(
+                message: dict[str, Any],
+            ) -> None:
+                """Service one paw.lm sub-LM call (no governance path).
+
+                Inference has no workspace side effects, so lm calls bypass
+                the governed dispatch; concurrency is bounded executor-side.
+                """
+                from .lm_executor import LMCallError
+
+                call_started = loop.time()
+                payload = message.get("payload")
+                arguments = dict(payload) if isinstance(payload, dict) else {}
+                op = str(arguments.get("op") or "call")
+                status = "ok"
+                response: dict[str, Any]
+                try:
+                    executor = getattr(bridge, "lm_executor", None)
+                    if executor is None:
+                        raise LMCallError(
+                            "lm_unavailable",
+                            "no sub-LM is configured for this session",
+                            retryable=False,
+                            suggestion=(
+                                "Handle the task directly in Python; paw.lm "
+                                "requires QWENPAW_SMALL_MODEL to be set."
+                            ),
+                        )
+                    value = await executor.execute(
+                        arguments,
+                        workspace=handle.workspace,
+                        session_id=handle.session_id,
+                    )
+                    response = {
+                        "id": message["id"],
+                        "type": "lm_result",
+                        "ok": True,
+                        "value": value,
+                    }
+                except LMCallError as exc:
+                    error = exc.as_error()
+                    status = error["kind"]
+                    response = {
+                        "id": message["id"],
+                        "type": "lm_result",
+                        "ok": False,
+                        "error": error,
+                    }
+                except Exception as exc:  # noqa: BLE001
+                    error = make_error(
+                        "failed",
+                        code=type(exc).__name__,
+                        message=f"{type(exc).__name__}: {exc}",
+                        retryable=False,
+                    )
+                    status = "failed"
+                    response = {
+                        "id": message["id"],
+                        "type": "lm_result",
+                        "ok": False,
+                        "error": error,
+                    }
+                finally:
+                    tool_calls.append(
+                        {
+                            "tool": f"paw.lm.{op}",
+                            "status": status,
+                            "duration_ms": round(
+                                (loop.time() - call_started) * 1000,
+                                1,
+                            ),
+                        },
+                    )
+                    # Sub-LM round trips can take seconds; like governed
+                    # dispatch they are excluded from the cell deadline.
+                    deadline_holder[0] += loop.time() - call_started
+                await self._send(handle, response)
+
             async def respond_interrupted(
                 message: dict[str, Any],
             ) -> None:
@@ -1011,13 +1103,22 @@ class KernelManager:
                     handle,
                     {
                         "id": message["id"],
-                        "type": "tool_result",
+                        "type": (
+                            "lm_result"
+                            if message.get("type") == "lm_call"
+                            else "tool_result"
+                        ),
                         "ok": False,
                         "error": make_error(
                             "interrupted",
                             message=(
-                                "cell interrupt in progress; this tool call "
-                                "was not executed"
+                                "cell interrupt in progress; this "
+                                + (
+                                    "sub-LM call"
+                                    if message.get("type") == "lm_call"
+                                    else "tool call"
+                                )
+                                + " was not executed"
                             ),
                         ),
                     },
@@ -1041,6 +1142,14 @@ class KernelManager:
                         task = asyncio.create_task(
                             service_tool_call(message),
                             name=f"repl-tool-{message.get('id')}",
+                        )
+                        pending_tasks.add(task)
+                        task.add_done_callback(pending_tasks.discard)
+                        continue
+                    if message_type == "lm_call":
+                        task = asyncio.create_task(
+                            service_lm_call(message),
+                            name=f"repl-lm-{message.get('id')}",
                         )
                         pending_tasks.add(task)
                         task.add_done_callback(pending_tasks.discard)
@@ -1195,6 +1304,23 @@ class KernelManager:
                         },
                     )
                     continue
+                if message_type == "lm_call":
+                    await self._send(
+                        handle,
+                        {
+                            "id": message["id"],
+                            "type": "lm_result",
+                            "ok": False,
+                            "error": make_error(
+                                "interrupted",
+                                message=(
+                                    "cell is running past its timeout; this "
+                                    "sub-LM call was not executed"
+                                ),
+                            ),
+                        },
+                    )
+                    continue
                 if message_type == "exec_result" and message["id"] == exec_id:
                     handle.last_used = time.monotonic()
                     self._schedule_reap(handle)
@@ -1244,7 +1370,7 @@ class KernelManager:
                 message_type = message["type"]
                 if message_type == "log":
                     continue
-                if message_type == "tool_call":
+                if message_type in ("tool_call", "lm_call"):
                     await respond_interrupted(message)
                     continue
                 if message_type == "exec_result" and message["id"] == exec_id:

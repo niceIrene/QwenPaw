@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import traceback
+import uuid
 from collections.abc import Mapping
 from pathlib import Path
 from types import TracebackType
@@ -38,6 +39,8 @@ from .protocol import (
     read_message,
     write_message,
 )
+from .lm_runtime import PawLMError
+from .orchestration import PLAN_VARIABLE
 from .proxy_runtime import PawToolError, build_namespace, new_tool_call_id
 
 
@@ -228,6 +231,48 @@ class StdioKernelChannel:
             with self._pending_lock:
                 self._pending.pop(call_id, None)
 
+    def call_lm(self, payload: dict[str, Any]) -> Any:
+        """Forward one ``paw.lm`` payload to the main-process LMExecutor."""
+        op = str(payload.get("op") or "call")
+        call_id = f"l-{uuid.uuid4().hex[:12]}"
+        inbox: queue.Queue = queue.Queue()
+        with self._pending_lock:
+            self._pending[call_id] = inbox
+        try:
+            self.send(
+                {
+                    "id": call_id,
+                    "type": "lm_call",
+                    "payload": payload,
+                },
+            )
+            while True:
+                message = inbox.get()
+                if message is None:
+                    raise KeyboardInterrupt("REPL shutdown requested")
+                if bool(message.get("ok")):
+                    self.tool_trace.append(
+                        {"tool": f"paw.lm.{op}", "status": "ok"},
+                    )
+                    return message.get("value")
+                error = message.get("error")
+                error_data = error if isinstance(error, Mapping) else {}
+                kind = str(error_data.get("kind") or "failed")
+                text = str(error_data.get("message") or "lm call failed")
+                self.tool_trace.append(
+                    {"tool": f"paw.lm.{op}", "status": kind},
+                )
+                raise PawLMError(
+                    kind,
+                    text,
+                    code=str(error_data.get("code") or kind),
+                    retryable=bool(error_data.get("retryable")),
+                    suggestion=str(error_data.get("suggestion") or ""),
+                )
+        finally:
+            with self._pending_lock:
+                self._pending.pop(call_id, None)
+
 
 def _visible_variables(
     namespace: Mapping[str, Any],
@@ -297,6 +342,55 @@ def _execute_tree(
             print(rendered)
 
 
+class _PlanGate:
+    """Forced-orchestration plan-first gate (design doc §9.2).
+
+    While open, every cell must contain a top-level ``PLAN = ...``
+    assignment; cells without one are rejected before execution.  The gate
+    closes once the namespace holds a non-empty string ``PLAN``.
+    """
+
+    def __init__(self, required: bool) -> None:
+        self.done = not required
+
+    def check(self, code: Any) -> dict[str, Any] | None:
+        """Return a structured error when the cell violates the gate."""
+        if self.done or not isinstance(code, str):
+            return None
+        try:
+            tree = ast.parse(code, filename="<cell>", mode="exec")
+        except SyntaxError:
+            return None
+        for node in tree.body:
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id == PLAN_VARIABLE:
+                    return None
+        return make_error(
+            "validation_error",
+            code="plan_required",
+            message=(
+                "orchestration-forced: define PLAN = '...' (a short "
+                "decomposition of the task) as a top-level assignment "
+                "before running any other cell"
+            ),
+            retryable=True,
+            suggestion=(
+                "Write PLAN = '<recon -> fan-out -> aggregate steps>' and "
+                "resubmit the cell."
+            ),
+        )
+
+    def update(self, namespace: dict[str, Any]) -> None:
+        value = namespace.get(PLAN_VARIABLE)
+        if isinstance(value, str) and value.strip():
+            self.done = True
+
+
 def execute_cell_code(
     code: str,
     namespace: dict[str, Any],
@@ -338,6 +432,7 @@ def _run_cell(
     workspace: Path,
     stdout_limit: int,
     backend: Any = None,
+    plan_gate: _PlanGate | None = None,
 ) -> dict[str, Any]:
     exec_id = str(message["id"])
     code = message.get("code")
@@ -352,6 +447,10 @@ def _run_cell(
                 message=str(exc),
             ),
         )
+    if plan_gate is not None:
+        gate_error = plan_gate.check(code)
+        if gate_error is not None:
+            return _error_only_result(exec_id, gate_error)
     before = _visible_variables(namespace)
     channel.tool_trace = []
     captured = _CapturedFDs()
@@ -369,6 +468,9 @@ def _run_cell(
     except BaseException as exc:  # noqa: BLE001 - traceback is the result
         error_text = traceback.format_exc()
         error = classify_exception(exc)
+
+    if ok and plan_gate is not None:
+        plan_gate.update(namespace)
 
     bounded = bound_output(
         captured.text,
@@ -415,6 +517,7 @@ def _serve_message_loop(
     stdout_limit: int,
     session_tag: str,
     update_tools: Any,
+    plan_gate: _PlanGate | None = None,
 ) -> None:
     active: _ActiveCell | None = None
     while True:
@@ -460,6 +563,20 @@ def _serve_message_loop(
                         "level": "error",
                         "message": (
                             "ignored tool_result for unknown call: "
+                            f"{message.get('id')}"
+                        ),
+                    },
+                )
+            continue
+        if message_type == "lm_result":
+            if not channel.deliver(message):
+                channel.send(
+                    {
+                        "id": "-",
+                        "type": "log",
+                        "level": "error",
+                        "message": (
+                            "ignored lm_result for unknown call: "
                             f"{message.get('id')}"
                         ),
                     },
@@ -514,6 +631,7 @@ def _serve_message_loop(
             channel,
             workspace,
             stdout_limit,
+            plan_gate=plan_gate,
         )
 
 
@@ -524,6 +642,7 @@ def _start_cell(
     channel: StdioKernelChannel,
     workspace: Path,
     stdout_limit: int,
+    plan_gate: _PlanGate | None = None,
 ) -> _ActiveCell:
     exec_id = str(message["id"])
     active = _ActiveCell(exec_id)
@@ -539,6 +658,7 @@ def _start_cell(
                 workspace,
                 stdout_limit,
                 backend=backend,
+                plan_gate=plan_gate,
             )
         except BaseException as exc:  # pragma: no cover - defensive
             active.result = _error_only_result(
@@ -664,6 +784,7 @@ def serve(
         config_data.get("stdout_limit") or DEFAULT_STDOUT_LIMIT,
     )
     session_tag = str(config_data.get("session_tag") or "default")
+    plan_gate = _PlanGate(required=bool(config_data.get("plan_required")))
 
     from .backend import make_backend, resolve_backend_kind
 
@@ -717,6 +838,7 @@ def serve(
             stdout_limit,
             session_tag,
             update_tools,
+            plan_gate=plan_gate,
         )
     finally:
         channel.abort_all()
