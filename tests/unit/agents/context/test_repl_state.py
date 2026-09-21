@@ -17,18 +17,30 @@ from agentscope.message import ToolResultState
 from qwenpaw.agents.context.scroll.history import HistoryStore
 from qwenpaw.agents.context.scroll.repl import (
     _DOC,
+    _FRESH_PROCESS_NOTE,
     make_recall_history_python,
 )
 
 
 def test_tool_description_is_bounded_and_keeps_execution_contract():
     size = len(_DOC.encode("utf-8"))
-    assert 1500 <= size <= 2500
+    # Sent with every request, so it stays small; 2700 leaves room for the
+    # row-shape and persistence contract the model was otherwise guessing.
+    assert 1500 <= size <= 2700
     for required in (
-        "Prefer `recall_history`",
+        # Only "when available": repl-only mode hides `recall_history`.
+        "When a `recall_history` tool is available, prefer it",
         "`ms` is ALREADY DEFINED",
-        "do not rely on leftover variables",
+        # The shared kernel keeps variables; the fallback path says when not.
+        "PERSIST across",
+        "[fresh process]",
         "KEEP STDOUT BOUNDED",
+        "scales with the model's context window",
+        "a notice and a short head",
+        "re-slice the SAME",
+        "`search` rows lack `created_at`",
+        '{"_truncated": True}',
+        "no phrases, parentheses or `*`",
         "LIMIT ? OFFSET ?",
         "ms.expand(lo, hi)",
         "ms.search(query",
@@ -37,6 +49,22 @@ def test_tool_description_is_bounded_and_keeps_execution_contract():
     ):
         assert required in _DOC
     assert "ANSWERING FROM RECALL" not in _DOC
+    # The old blanket warning contradicted the shared kernel's behaviour.
+    assert "do not rely on leftover variables" not in _DOC
+    # Documented defaults must match MemorySpace (they had drifted).
+    assert "ms.session(session_id, all_agents=False, limit=200)" in _DOC
+    assert "ms.agents(limit=50)" in _DOC
+    # The worked example must itself fit the output budget it preaches.
+    assert '["content"][:200]' in _DOC
+    assert '["content"][:2000]' not in _DOC
+
+
+async def test_fallback_cells_say_their_variables_were_not_kept(run):
+    # No governor here, so cells take the fresh-process fallback path.
+    chunk = await run("print('hello')")
+    text = _text(chunk)
+    assert "hello" in text
+    assert text.rstrip().endswith(_FRESH_PROCESS_NOTE)
 
 
 @pytest.fixture

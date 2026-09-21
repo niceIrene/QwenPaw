@@ -64,3 +64,35 @@ def test_repl_only_differs_only_in_recall_block():
         assert marker in repl
     # Everything before the swapped block is untouched.
     assert standard.split("THE MAP")[0] == repl.split("THE MAP")[0]
+
+
+def test_repl_only_teaches_the_recall_loop():
+    """repl-only mode is where the model writes recall code, so the prompt
+    must teach the method, not only name the ``ms`` calls."""
+    for language, needles in {
+        "en": (
+            "RECALL LOOP",
+            "Variables\n    persist across cells",
+            "do not re-run the query",
+            "no\n    quoted phrases, parentheses or ``*``",
+            "no timestamp",
+            "Avoid\n    ``LIKE '%word%'`` scans",
+        ),
+        "zh": ("RECALL 循环", "不要重新执行查询", "没有时间戳"),
+    }.items():
+        prompt = build_scroll_system_prompt(language, repl_only=True)
+        for needle in needles:
+            assert needle in prompt, (language, needle)
+        # One ranked, role-filtered, match-centred query over the FTS index.
+        assert "conversation_history_fts MATCH ?" in prompt
+        assert "snippet(conversation_history_fts" in prompt
+        assert "bm25(conversation_history_fts)" in prompt
+
+
+def test_recall_loop_is_repl_only():
+    # The structured tool has no cells, variables or SQL surface.
+    for language in ("en", "zh"):
+        assert "conversation_history_fts" not in build_scroll_system_prompt(
+            language,
+        )
+

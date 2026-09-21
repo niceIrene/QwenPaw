@@ -12,7 +12,9 @@ stateless cells) inside a one-shot sandbox — mirroring
 from :mod:`.memoryspace`.
 
 Tables written through ``ms.sql_exec`` persist in the scratch DB under the
-workspace; do not rely on any other variables surviving across calls.
+workspace. Other variables persist only in the shared kernel; a fallback
+(fresh-process) call says so in its result (``_FRESH_PROCESS_NOTE``), which is
+what lets the tool description promise persistence without lying.
 """
 
 import asyncio
@@ -28,56 +30,71 @@ from agentscope.tool import ToolChunk
 from ...tools.utils import truncate_text_output  # repo-standard output bound
 from ....runtime.tool_registry import ToolDescriptor
 
+# Appended to every fallback (non-kernel) result. The tool description tells
+# the model that variables persist, which is only true in the shared kernel;
+# this marker is how a fresh-process cell stays honest about it.
+_FRESH_PROCESS_NOTE = (
+    "[fresh process] This cell ran outside the shared kernel: variables from "
+    "earlier cells were not available and none are kept."
+)
+
 # Directory holding memoryspace.py — added to the cell's sys.path so the
 # sandboxed process imports it by bare module name.
 _PKG_DIR = str(Path(__file__).parent)
 
 _DOC = """Recall conversation history via Python — the ADVANCED recall tool.
 
-Prefer `recall_history` for ordinary expand/search/recall_tool reads. Use this
-sandboxed Python tool for session listing, custom SQL counting/ranking,
-scratch tables, or cross-referencing many turns programmatically.
+When a `recall_history` tool is available, prefer it for ordinary
+expand/search/recall_tool reads. Use this sandboxed Python tool for session
+listing, custom SQL counting/ranking, scratch tables, or cross-referencing
+many turns.
 
-`ms` is ALREADY DEFINED; use it directly (do not import it). `ms` itself and
-tables written through `ms.sql_exec` persist across calls; any other variable
-may not (a call can run in a fresh process or in the shared CodeAct kernel —
-do not rely on leftover variables). Only printed stdout is returned.
+`ms` is ALREADY DEFINED; use it directly (do not import it). Cells normally
+run in the shared CodeAct kernel: variables, imports and defs PERSIST across
+calls, so keep results in variables and re-slice them, don't re-query. (A
+result ending in `[fresh process]` kept only `ms` and `ms.sql_exec` tables.)
+Only printed stdout is returned.
 
-KEEP STDOUT BOUNDED. This tool has no continuation cursor and large stdout is
-truncated. Filter before printing, print short fields/slices, or page with SQL
-`LIMIT ? OFFSET ?`; issue another call for the next page. Never print a broad
-unbounded result set.
+KEEP STDOUT BOUNDED: the per-cell cap scales with the model's context window
+(8-32 KB). Past it you get a notice and a short head, never the rest, and
+there is no continuation cursor. Print one short line per row (seq, role, a
+content slice), never whole rows; after an overflow re-slice the SAME
+variable instead of re-running the query. Page with SQL `LIMIT ? OFFSET ?`.
 
 Helpers return `list[dict]`; text is always in `content` (not
-`content_preview`). A trailing `{"_truncated": True}` means the row cap was
-reached: narrow or page the query.
+`content_preview`). Row keys differ: `search` rows lack `created_at`,
+`expand` rows lack `session_id` — use `row.get(...)` or `ms.sql_query`. A
+trailing `{"_truncated": True}` row (no other keys) means the row cap was
+hit: skip it, then narrow or page.
 
   • ms.expand(lo, hi)
     Raw turns for an inclusive seq span, oldest first.
   • ms.search(query, k=10, kind=None, all_agents=False,
               session_id=None, agent_id=None)
-    Keyword/FTS search across your sessions; uppercase OR is supported.
+    Ranked FTS across your sessions. Bare words are AND-combined (stemmed);
+    uppercase OR widens. Words only: no phrases, parentheses or `*`.
   • ms.recall_tool(tool_call_id, all_agents=False)
     Tool call/result; saved large outputs include an artifact file pointer.
   • ms.sessions(all_agents=False, limit=50)
-  • ms.session(session_id, all_agents=False, limit=1000)
-  • ms.agents(limit=100)
+  • ms.session(session_id, all_agents=False, limit=200)
+  • ms.agents(limit=50)
   • ms.days_between(d1, d2, inclusive=False)
   • ms.sql_query(sql, params)
     Read-only SQL; durable history is `hist.conversation_history`.
   • ms.sql_exec(sql, params)
     Writes only the persistent scratch DB. Always bind values via `params`.
 
-Typical flow: locate targeted seq values with `ms.search`, then read only the
-needed range with `ms.expand`. For custom paging:
+Typical flow: locate seqs with `ms.search`, read only the needed range with
+`ms.expand`. For filters search lacks (role, date), use SQL:
 
     rows = ms.sql_query(
-        "SELECT seq, content FROM hist.conversation_history "
-        "WHERE seq BETWEEN ? AND ? ORDER BY seq LIMIT ? OFFSET ?",
-        (lo, hi, 20, offset),
+        "SELECT seq, role, created_at, content "
+        "FROM hist.conversation_history WHERE seq BETWEEN ? AND ? "
+        "AND role = ? ORDER BY seq LIMIT ? OFFSET ?",
+        (lo, hi, "user", 20, offset),
     )
     for row in rows:
-        print(row["seq"], row["content"][:2000])
+        print(row["seq"], row["created_at"], row["content"][:200])
 
 Args:
     source (str): Python source to execute.
@@ -320,6 +337,8 @@ def make_recall_history_python(
         # persisted tool_state, and the model. Reflect the actual exit.
         state = ToolResultState.SUCCESS if code == 0 else ToolResultState.ERROR
         text, metadata = truncate_text_output(text)
+        # After truncation, so a huge output cannot cut the note off.
+        text = f"{text}\n{_FRESH_PROCESS_NOTE}"
         return ToolChunk(
             content=[TextBlock(type="text", text=text)],
             state=state,

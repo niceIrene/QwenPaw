@@ -209,7 +209,33 @@ the pre-bound ``ms`` surface — ``ms.search("keywords", k=10)`` to find turns,
 structured filters, ``ms.days_between(d1, d2)`` for calendar gaps. After the
 first recall call, ``ms`` is also bound inside the shared ``repl_exec``
 kernel. Recall defaults to your own history (across all your sessions); pass
-``all_agents=True`` to widen to other agents' turns."""
+``all_agents=True`` to widen to other agents' turns.
+
+RECALL LOOP — retrieve, triage, read, reshape:
+  • Keep every result in a variable (``hits = ms.search(...)``). Variables
+    persist across cells and cell output is capped, so print one short line
+    per hit — ``seq``, ``role``, a slice of ``content`` — never whole rows. If
+    output comes back truncated the variable still holds all of it: print a
+    smaller slice; do not re-run the query.
+  • ``ms.search`` AND-combines bare words (stemmed, so inflections already
+    match); join synonyms with uppercase ``OR``. It takes words only — no
+    quoted phrases, parentheses or ``*``. A thin result is usually an
+    over-constrained query: drop words or add ``OR`` alternatives before
+    concluding a fact is absent.
+  • Search hits carry the full turn text and no timestamp. When you need a
+    role or date filter, or a ranked match-centred preview of many hits, use
+    SQL over the same index:
+    ``SELECT ch.seq, ch.role, ch.created_at,
+    snippet(conversation_history_fts, 0, '', '', ' … ', 24) AS snip
+    FROM hist.conversation_history_fts JOIN hist.conversation_history ch
+    ON ch.seq = conversation_history_fts.rowid
+    WHERE conversation_history_fts MATCH ? AND ch.role = 'user'
+    ORDER BY bm25(conversation_history_fts) LIMIT 15``
+    (``MATCH`` also accepts ``"exact phrase"`` and parentheses). Avoid
+    ``LIKE '%word%'`` scans: unranked, unstemmed, and they return long lists.
+  • Then read only the turns that matter with ``ms.expand(lo, hi)``, printing
+    bounded slices, and reshape what you keep (dict, list, counter) instead
+    of retrieving it again."""
 
 _SCROLL_RECALL_BLOCK_ZH = """\
 用 ``recall_history(op="search", …)`` 搜
@@ -229,7 +255,28 @@ Python cell——``ms.search("关键词", k=10)`` 找轮次，``ms.expand(lo, hi
 区间读全文，``ms.sql_query("SELECT ... FROM hist.conversation_history ...")``
 做结构化过滤，``ms.days_between(d1, d2)`` 算日期间隔。第一次 recall 调用之后，
 ``ms`` 也会绑定到共享的 ``repl_exec`` kernel 里。recall 默认查你自己的历史（跨你
-的所有会话）；传 ``all_agents=True`` 可扩大到其他 agent 的轮次。"""
+的所有会话）；传 ``all_agents=True`` 可扩大到其他 agent 的轮次。
+
+RECALL 循环——检索、筛选、阅读、重塑：
+  • 把每次结果存进变量（``hits = ms.search(...)``）。变量在 cell 之间会保留，而
+    cell 输出有上限，所以每条命中只打印一行短内容——``seq``、``role``、
+    ``content`` 的一小段——不要打印整行。如果输出被截断，变量里仍然是完整结果：
+    打印更小的切片，不要重新执行查询。
+  • ``ms.search`` 对裸词做 AND 组合（已做词干化，词形变化自动匹配）；同义词用大写
+    ``OR`` 连接。它只接受词——不支持带引号的短语、括号或 ``*``。结果很少通常是查询
+    约束过紧：先去掉一些词或加 ``OR`` 备选，再下“没有这条信息”的结论。
+  • 搜索命中带有整轮全文，但没有时间戳。需要按 role 或日期过滤，或者要对大量命中
+    做带排序、以匹配处为中心的预览时，对同一索引使用 SQL：
+    ``SELECT ch.seq, ch.role, ch.created_at,
+    snippet(conversation_history_fts, 0, '', '', ' … ', 24) AS snip
+    FROM hist.conversation_history_fts JOIN hist.conversation_history ch
+    ON ch.seq = conversation_history_fts.rowid
+    WHERE conversation_history_fts MATCH ? AND ch.role = 'user'
+    ORDER BY bm25(conversation_history_fts) LIMIT 15``
+    （``MATCH`` 还支持 ``"精确短语"`` 和括号）。避免 ``LIKE '%词%'`` 扫描：
+    没有排序、没有词干化，而且会返回很长的列表。
+  • 然后只用 ``ms.expand(lo, hi)`` 阅读真正重要的轮次，打印有上限的切片，并把要
+    保留的内容重塑成合适的结构（dict、list、counter），而不是再检索一遍。"""
 
 _REPL_ONLY_RECALL_BLOCKS = {
     "zh": (_SCROLL_RECALL_BLOCK_ZH, _SCROLL_RECALL_BLOCK_ZH_REPL_ONLY),

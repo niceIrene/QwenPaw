@@ -153,3 +153,16 @@ def test_codeact_prompt_covers_roadmap_rules() -> None:
     assert "rate_limited" in text
     for removed in ("peek", "peek_file", "ls_vars", "restore_var", "save("):
         assert removed not in text
+
+
+def test_codeact_prompt_scopes_self_verification_to_tasks_that_build() -> None:
+    """The run-it-and-observe rule is for artifacts. Applied to a retrieval
+    question it has nothing to run, and only drives repeated re-searching."""
+    text = CODEACT_SYSTEM_PROMPT
+    assert "When the task produces or changes something" in text
+    assert "every criterion must have been observed" in text
+    assert "there is nothing to run" in text
+    assert "Check ONCE" in text
+    assert "no new\n  searches" in text
+    # The unscoped form applied the rule to every task.
+    assert "Before declaring the task complete, self-verify" not in text
