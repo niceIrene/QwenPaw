@@ -10,6 +10,45 @@ from typing import Any
 DEFAULT_STDOUT_LIMIT = 8192
 DEFAULT_TRACEBACK_LIMIT = 16 * 1024
 
+# The per-cell stdout cap scales with the model's context window, like the
+# Scroll reference runtime (``stdout_cap_for``): a quarter of the window,
+# clamped. A fixed 8 KB suits a 32k-token model; on a 1M-token model it cut a
+# fifth of all recall cells in a long-memory benchmark, and each cut cost a
+# re-query turn. The unit here is bytes, as everywhere in this module.
+MIN_STDOUT_LIMIT = 2 * 1024
+MAX_STDOUT_LIMIT = 32 * 1024
+# On overflow only a short head is shown: the point of the notice is to make
+# the model re-print less from its variables, not to work from a fragment.
+OVERFLOW_HEAD_BYTES = 1536
+# Public so callers can recognise an already-bounded observation.
+OVERFLOW_MARKER = "[output too long:"
+STDOUT_LIMIT_ENV = "QWENPAW_REPL_STDOUT_LIMIT"
+
+
+def stdout_limit_for(context_tokens: int | None) -> int:
+    """Per-cell stdout cap, in bytes, for a model context window in tokens.
+
+    Unknown or non-positive windows keep :data:`DEFAULT_STDOUT_LIMIT`.
+    """
+    if not context_tokens or context_tokens <= 0:
+        return DEFAULT_STDOUT_LIMIT
+    return max(MIN_STDOUT_LIMIT, min(MAX_STDOUT_LIMIT, context_tokens // 4))
+
+
+def resolve_stdout_limit(
+    explicit: int | None = None,
+    context_tokens: int | None = None,
+) -> int:
+    """Pick the cap: operator env override > explicit value > scaled."""
+    import os
+
+    raw = (os.getenv(STDOUT_LIMIT_ENV) or "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    if explicit is not None:
+        return explicit
+    return stdout_limit_for(context_tokens)
+
 # Output display policy for the final cell expression (roadmap §2.3).
 DISPLAY_MODES = ("none", "summary", "full")
 DEFAULT_DISPLAY = "summary"
@@ -86,6 +125,17 @@ def _safe_workspace_path(workspace: Path, relative: str | Path) -> Path:
     return resolved
 
 
+def _head(encoded: bytes, budget: int) -> str:
+    """First ``budget`` bytes, cut back to a line boundary if there is one."""
+    if budget <= 0:
+        return ""
+    chunk = encoded[:budget]
+    newline = chunk.rfind(b"\n")
+    if newline > 0 and len(encoded) > budget:
+        chunk = chunk[: newline + 1]
+    return chunk.decode("utf-8", errors="ignore")
+
+
 def bound_output(
     text: str,
     *,
@@ -93,43 +143,54 @@ def bound_output(
     spill_name: str,
     limit: int = DEFAULT_STDOUT_LIMIT,
 ) -> BoundedOutput:
-    """Return bounded text, spilling the full UTF-8 payload when necessary."""
+    """Return bounded text, spilling the full UTF-8 payload when necessary.
+
+    Over the limit, the model gets a notice and a short head instead of the
+    output: what it needs is normally still in its variables, so the notice
+    tells it to print less rather than to repeat the call. The full payload
+    is also saved under ``out/`` when the workspace is writable.
+    """
     encoded = text.encode("utf-8", errors="replace")
     if len(encoded) <= limit:
         return BoundedOutput(text=text)
 
+    lead = (
+        f"{OVERFLOW_MARKER} {len(encoded)} bytes printed, over the "
+        f"{limit}-byte limit for this model's context window; only the "
+        "first part follows. Your variables persist: keep using the "
+        "original REPL variables and print LESS (a count, a few fields, a "
+        "short slice per row)"
+    )
     relative = Path("out") / spill_name
+    spilled: tuple[str, ...] = ()
     try:
         destination = _safe_workspace_path(workspace, relative)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(encoded)
     except OSError:
         # The sandbox can remount the workspace read-only; a failed spill must
-        # not fail the cell. Degrade to a truncated inline payload.
-        note = (
-            f"[output {len(encoded)} bytes could not be spilled "
-            "(workspace read-only); truncated to the first bytes below. "
-            "Re-run with a smaller output to see more.]\n"
+        # not fail the cell. Steer to the variables, not to a re-run: "re-run"
+        # sends the model back to repeat the retrieval it already did.
+        notice = (
+            f"{lead} instead of re-running the call. The full output could "
+            "not be spilled (workspace read-only).]\n"
         )
-        budget = max(0, limit - len(note.encode("utf-8", errors="replace")))
-        truncated = encoded[:budget].decode("utf-8", errors="ignore")
-        return BoundedOutput(text=note + truncated)
+    else:
+        spilled = (relative.as_posix(),)
+        notice = (
+            f"{lead}. Full output saved to {relative.as_posix()}: read a "
+            f"bounded slice with pathlib.Path({relative.as_posix()!r})"
+            ".read_text()[:2000]; do not print the whole spill.]\n"
+        )
 
-    head_lines = text.splitlines(keepends=True)[:8]
-    head = "".join(head_lines)
-    summary = (
-        f"[output {len(encoded)} bytes saved to {relative.as_posix()}; "
-        "first 8 lines follow. The full spill is archival: keep using the "
-        "original REPL variables, or read a bounded slice with "
-        f"pathlib.Path({relative.as_posix()!r}).read_text()[:2000]; "
-        "do not print the whole spill.]\n"
-        f"{head}"
-    )
-    # A single pathological first line must not defeat the hard context cap.
-    summary_bytes = summary.encode("utf-8", errors="replace")
-    if len(summary_bytes) > limit:
-        summary = summary_bytes[:limit].decode("utf-8", errors="ignore")
-    return BoundedOutput(text=summary, spilled=(relative.as_posix(),))
+    notice_bytes = notice.encode("utf-8", errors="replace")
+    room = limit - len(notice_bytes)
+    bounded = notice + _head(encoded, min(OVERFLOW_HEAD_BYTES, room))
+    # A tiny limit must still be a hard cap, even on the notice itself.
+    bounded_bytes = bounded.encode("utf-8", errors="replace")
+    if len(bounded_bytes) > limit:
+        bounded = bounded_bytes[:limit].decode("utf-8", errors="ignore")
+    return BoundedOutput(text=bounded, spilled=spilled)
 
 
 def bound_traceback(
@@ -153,9 +214,16 @@ __all__ = [
     "DEFAULT_STDOUT_LIMIT",
     "DEFAULT_TRACEBACK_LIMIT",
     "DISPLAY_MODES",
+    "MAX_STDOUT_LIMIT",
+    "MIN_STDOUT_LIMIT",
+    "OVERFLOW_HEAD_BYTES",
+    "OVERFLOW_MARKER",
+    "STDOUT_LIMIT_ENV",
     "SUMMARY_PREVIEW_BYTES",
     "bound_output",
     "bound_traceback",
     "render_last_expression",
+    "resolve_stdout_limit",
+    "stdout_limit_for",
     "validate_display",
 ]

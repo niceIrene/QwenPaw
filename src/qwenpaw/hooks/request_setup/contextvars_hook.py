@@ -28,6 +28,7 @@ class ContextVarsSetupHook(LifecycleHook):
         from ...config.context import (
             set_current_workspace_dir,
             set_current_session_id,
+            set_current_model_context_size,
             set_current_recent_max_bytes,
             set_current_shell_command_timeout,
             set_current_shell_command_executable,
@@ -108,6 +109,25 @@ class ContextVarsSetupHook(LifecycleHook):
             logger.warning(
                 "contextvars_setup: config-derived vars failed; "
                 "tools may see defaults",
+                exc_info=True,
+            )
+        # Separate from the block above: resolving the window touches the
+        # provider registry, and a failure there must not cost the other
+        # vars. Unset simply keeps the REPL's default stdout cap.
+        try:
+            from ...config.config import (
+                get_model_max_input_length,
+                load_agent_config,
+            )
+
+            window = get_model_max_input_length(
+                load_agent_config(ctx.agent_id),
+            )
+            set_current_model_context_size(int(window))
+        except Exception:
+            set_current_model_context_size(None)
+            logger.debug(
+                "contextvars_setup: model context size unavailable",
                 exc_info=True,
             )
 

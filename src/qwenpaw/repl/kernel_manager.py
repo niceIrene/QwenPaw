@@ -24,7 +24,7 @@ from ..sandbox import MountSpec, SandboxConfig, SandboxMode
 from .backend import resolve_backend_kind
 from .errors import classify_tool_error, make_error
 from .governance_bridge import ToolForwardingError
-from .output_policy import DEFAULT_STDOUT_LIMIT
+from .output_policy import resolve_stdout_limit
 from .persistence import latest_snapshot_dir
 from .protocol import (
     MAX_KERNEL_MESSAGE_BYTES,
@@ -592,9 +592,11 @@ class KernelManager:
         self,
         *,
         idle_timeout: float = DEFAULT_IDLE_TIMEOUT,
-        stdout_limit: int = DEFAULT_STDOUT_LIMIT,
+        stdout_limit: int | None = None,
     ) -> None:
         self.idle_timeout = idle_timeout
+        # None = scale each kernel's cap with the active model's context
+        # window when the kernel starts; an int pins it for every kernel.
         self.stdout_limit = stdout_limit
         self._handles: dict[str, KernelHandle] = {}
         self._manager_lock = asyncio.Lock()
@@ -632,6 +634,13 @@ class KernelManager:
                 f"unsupported REPL sandbox mode: {config.mode.value}",
             )
         return argv, dict(config.env_vars)
+
+    def _kernel_stdout_limit(self) -> int:
+        """Cap for a kernel starting now, scaled to the model's window."""
+        return resolve_stdout_limit(
+            self.stdout_limit,
+            _active_model_context_size(),
+        )
 
     async def get_or_start(
         self,
@@ -708,7 +717,7 @@ class KernelManager:
                     "type": "init",
                     "tools": specs,
                     "config": {
-                        "stdout_limit": self.stdout_limit,
+                        "stdout_limit": self._kernel_stdout_limit(),
                         "backend": resolve_backend_kind(),
                         "session_tag": tag or "default",
                     },
@@ -1455,6 +1464,36 @@ class KernelManager:
 
 
 _DEFAULT_MANAGER: KernelManager | None = None
+
+
+def _active_model_context_size() -> int | None:
+    """The active model's context window in tokens, or None if unknown.
+
+    Kernels start inside tool calls, and tool calls run across task
+    boundaries (see ``ReplRuntimeBinding``), so the request-scoped ContextVar
+    is often not visible here. Fall back to resolving the current agent's
+    configured model, which needs no request context.
+    """
+    from ..config.context import get_current_model_context_size
+
+    tokens = get_current_model_context_size()
+    if tokens:
+        return tokens
+    try:
+        from ..app.agent_context import get_current_agent_id
+        from ..config.config import (
+            get_model_max_input_length,
+            load_agent_config,
+        )
+
+        return int(
+            get_model_max_input_length(
+                load_agent_config(get_current_agent_id()),
+            ),
+        )
+    except Exception:  # noqa: BLE001 - an unknown window keeps the default
+        logger.debug("repl: model context size unavailable", exc_info=True)
+        return None
 
 
 def get_default_kernel_manager() -> KernelManager:

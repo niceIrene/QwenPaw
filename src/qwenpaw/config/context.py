@@ -40,6 +40,24 @@ def set_current_workspace_dir(workspace_dir: Path | None) -> None:
     current_workspace_dir.set(workspace_dir)
 
 
+# Context variable to store the active model's context window (tokens). The
+# REPL scales its per-cell stdout cap from it when it starts a kernel.
+current_model_context_size: ContextVar[int | None] = ContextVar(
+    "current_model_context_size",
+    default=None,
+)
+
+
+def get_current_model_context_size() -> int | None:
+    """Get the active model's context window in tokens, or None if unset."""
+    return current_model_context_size.get()
+
+
+def set_current_model_context_size(tokens: int | None) -> None:
+    """Set the active model's context window in tokens for this request."""
+    current_model_context_size.set(tokens)
+
+
 # Context variable to store the recent_max_bytes limit
 current_recent_max_bytes: ContextVar[int | None] = ContextVar(
     "current_recent_max_bytes",

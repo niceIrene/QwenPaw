@@ -141,3 +141,42 @@ class TestTelemetry:
             )
         path = tmp_path / ".qwenpaw-repl" / "telemetry.jsonl"
         assert len(path.read_text().splitlines()) == 2
+
+
+def test_kernel_stdout_limit_scales_without_request_context(monkeypatch):
+    """Kernels start inside tool calls, across a task boundary from the
+    request hook, so the limit must resolve without the ContextVar."""
+    from qwenpaw.config import context as qp_context
+    from qwenpaw.repl import kernel_manager as km
+    from qwenpaw.repl.output_policy import (
+        DEFAULT_STDOUT_LIMIT,
+        MAX_STDOUT_LIMIT,
+        STDOUT_LIMIT_ENV,
+    )
+
+    monkeypatch.delenv(STDOUT_LIMIT_ENV, raising=False)
+    qp_context.set_current_model_context_size(None)
+    monkeypatch.setattr(
+        "qwenpaw.config.config.load_agent_config",
+        lambda agent_id: object(),
+    )
+    monkeypatch.setattr(
+        "qwenpaw.config.config.get_model_max_input_length",
+        lambda cfg: 1_000_000,
+    )
+    assert km.KernelManager()._kernel_stdout_limit() == MAX_STDOUT_LIMIT
+    # A pinned manager and an unresolvable model both stay predictable.
+    assert km.KernelManager(stdout_limit=512)._kernel_stdout_limit() == 512
+
+    def boom(agent_id):
+        raise RuntimeError("no config")
+
+    monkeypatch.setattr("qwenpaw.config.config.load_agent_config", boom)
+    assert km.KernelManager()._kernel_stdout_limit() == DEFAULT_STDOUT_LIMIT
+    # With request context present, the ContextVar is used directly.
+    qp_context.set_current_model_context_size(65_536)
+    try:
+        assert km.KernelManager()._kernel_stdout_limit() == 16_384
+    finally:
+        qp_context.set_current_model_context_size(None)
+
