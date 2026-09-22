@@ -916,3 +916,31 @@ def test_attach_saved_tool_preserves_preview_when_scan_budget_exhausts(
     previews = [row for row in rows if row["kind"] == "tool_result"]
     assert len(previews) == 1
     assert "bounded preview retained in history" in previews[0]["content"]
+
+
+def test_expand_and_search_rows_carry_session_and_timestamp(tmp_path):
+    # The structured recall tool renders these; without them a model that
+    # cannot run SQL has no way to date a turn or tell sessions apart.
+    db = tmp_path / "history.db"
+    store = HistoryStore(str(db))
+    store.append(
+        session_id="s1",
+        entry=LogEntry(
+            kind="context_msg",
+            role="user",
+            content="tanks parked at base",
+            created_at="2024-07-13T10:00:00",
+        ),
+        agent_id="ag1",
+    )
+    store.close()
+    ms = MemorySpace(history_db_path=str(db), session_id="other", agent_id="ag1")
+    try:
+        (row,) = ms.expand(1, 1)
+        assert row["session_id"] == "s1"
+        assert row["created_at"] == "2024-07-13T10:00:00"
+        (hit,) = ms.search("tanks", k=5)
+        assert hit["created_at"] == "2024-07-13T10:00:00"
+        assert hit["session_id"] == "s1"
+    finally:
+        ms.close()

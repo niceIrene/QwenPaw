@@ -290,7 +290,8 @@ class MemorySpace:
         primary way to re-read the evicted turns the index points you at.
         """
         return self._select(
-            "SELECT seq, kind, role, name, content, headline, metadata "
+            "SELECT seq, session_id, created_at, kind, role, name, content, "
+            "headline, metadata "
             "FROM hist.conversation_history "
             "WHERE seq BETWEEN ? AND ? ORDER BY seq",
             (int(lo), int(hi)),
@@ -376,7 +377,7 @@ class MemorySpace:
             params.append(self._agent_id)
         params.append(int(limit))
         return self._select(
-            "SELECT seq, kind, role, name, headline, content "
+            "SELECT seq, created_at, kind, role, name, headline, content "
             "FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq LIMIT ?",
             tuple(params),
@@ -554,7 +555,7 @@ class MemorySpace:
             where.append("ch.kind = ?")
             params.append(kind)
         sql = (
-            "SELECT ch.seq, ch.session_id, ch.kind, ch.role, "
+            "SELECT ch.seq, ch.session_id, ch.created_at, ch.kind, ch.role, "
             "ch.name, ch.headline, ch.content, ch.metadata "
             f"FROM hist.{fts} JOIN hist.conversation_history ch "
             f"ON ch.seq = {fts}.rowid "
@@ -620,8 +621,8 @@ class MemorySpace:
             where.append("kind = ?")
             params.append(kind)
         sql = (
-            "SELECT seq, session_id, kind, role, name, headline, content, "
-            "metadata "
+            "SELECT seq, session_id, created_at, kind, role, name, headline, "
+            "content, metadata "
             "FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq DESC LIMIT ?"
         )
@@ -674,7 +675,7 @@ class MemorySpace:
             where.append("seq < ?")
             params.append(int(before_seq))
         sql = (
-            "SELECT seq, session_id, kind, role, name, headline, "
+            "SELECT seq, session_id, created_at, kind, role, name, headline, "
             "tool_call_id, content, metadata FROM hist.conversation_history "
             "WHERE " + " AND ".join(where) + " ORDER BY seq DESC LIMIT ?"
         )

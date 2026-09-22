@@ -601,3 +601,25 @@ def test_governance_registers_internal_type():
         DEFAULT_REGISTRY.python_to_policy_name("recall_history")
         == "RecallHistory"
     )
+
+
+def test_rendered_rows_show_the_timestamp():
+    from qwenpaw.agents.context.scroll.recall_tool import _render_rows
+
+    text = _render_rows(
+        [
+            {
+                "seq": 7,
+                "created_at": "2024-07-13T10:00:00",
+                "kind": "context_msg",
+                "role": "user",
+                "session_id": "s1",
+                "content": "tanks parked at base",
+            },
+        ],
+    )
+    assert text.startswith(
+        "— seq=7 created_at=2024-07-13T10:00:00 kind=context_msg role=user "
+        "session_id=s1",
+    )
+    assert text.endswith("tanks parked at base")

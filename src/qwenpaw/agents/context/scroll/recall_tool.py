@@ -209,7 +209,8 @@ plus your earlier sessions. Pick an op:
   • op="recall_tool", tool_call_id="call_abc" — a tool call and its result.
     For truncated large outputs, this also reports the saved full-output file.
 
-Rows come back with their seq. A page ending in next_cursor is incomplete;
+Rows come back with their seq and created_at timestamp (no date filter:
+search by keywords, then read the dates). A page ending in next_cursor is incomplete;
 continue with the SAME arguments plus cursor=next_cursor. Never retry the
 same cursor. The cursor is bound to the original arguments and result
 snapshot; changing the query, range, filters, or k fails. An empty result is
@@ -234,7 +235,16 @@ Args:
 """
 
 # Keys rendered per row, in display order, when present and non-empty.
-_ROW_META_KEYS = ("kind", "role", "name", "headline", "session_id")
+# created_at is rendered so the structured tool, which has no date filter,
+# still lets the model date a turn and order facts by time.
+_ROW_META_KEYS = (
+    "created_at",
+    "kind",
+    "role",
+    "name",
+    "headline",
+    "session_id",
+)
 
 
 def _render_rows(rows: list[dict]) -> str:
