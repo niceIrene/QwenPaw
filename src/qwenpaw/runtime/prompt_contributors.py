@@ -332,14 +332,24 @@ class CodingModeContributor(SyncPromptContributor):
         from ..modes.coding import (
             _CODING_SYSTEM_PROMPT_TEMPLATE,
             _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL,
+            _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL_NO_RECALL,
         )
 
         persona = str(getattr(cm, "persona", "full") or "full").strip().lower()
-        template = (
-            _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL
-            if persona == "minimal"
-            else _CODING_SYSTEM_PROMPT_TEMPLATE
-        )
+        # The minimal persona describes recall_history_python and ``ms``,
+        # which exist only under the scroll context strategy; without it the
+        # model must not be told about a tool it does not have.
+        running = getattr(agent_config, "running", None)
+        lcc = getattr(running, "light_context_config", None)
+        strategy = str(getattr(lcc, "strategy", "scroll") or "scroll")
+        if persona == "minimal":
+            template = (
+                _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL
+                if strategy == "scroll"
+                else _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL_NO_RECALL
+            )
+        else:
+            template = _CODING_SYSTEM_PROMPT_TEMPLATE
         workspace_dir = str(getattr(ctx, "workspace_dir", "") or "(unknown)")
         project_dir = self._resolve_project_dir(agent_config) or workspace_dir
         return template.format(

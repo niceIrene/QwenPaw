@@ -19,6 +19,7 @@ from .mixin import (
     CodingModeMixin,
     _CODING_SYSTEM_PROMPT_TEMPLATE,
     _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL,
+    _CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL_NO_RECALL,
     collect_coding_tools,
 )
 
@@ -51,5 +52,6 @@ __all__ = [
     "CodingModeMixin",
     "_CODING_SYSTEM_PROMPT_TEMPLATE",
     "_CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL",
+    "_CODING_SYSTEM_PROMPT_TEMPLATE_MINIMAL_NO_RECALL",
     "collect_coding_tools",
 ]

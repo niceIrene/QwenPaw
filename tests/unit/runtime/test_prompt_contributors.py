@@ -275,3 +275,47 @@ def test_coding_mode_does_not_treat_generic_memory_as_internal_access(
     assert "Generic references to" in fragment
     assert '"memory"' in fragment
     assert "do NOT grant access" in fragment
+
+
+def _coding_ctx(tmp_path, *, strategy):
+    return SimpleNamespace(
+        workspace_dir=str(tmp_path),
+        agent_id="test_agent",
+        extras={
+            "agent_config": SimpleNamespace(
+                id=None,
+                system_prompt_files=[],
+                language="en",
+                coding_mode=SimpleNamespace(
+                    enabled=True,
+                    persona="minimal",
+                    project_dir=str(tmp_path),
+                ),
+                running=SimpleNamespace(
+                    light_context_config=SimpleNamespace(strategy=strategy),
+                ),
+            ),
+            "heartbeat_enabled": False,
+            "language": "en",
+            "memory_manager": None,
+        },
+    )
+
+
+def test_minimal_coding_prompt_describes_recall_only_under_scroll(tmp_path):
+    """Without the scroll strategy there is no recall tool to describe."""
+    with_scroll = CodingModeContributor().contribute_sync(
+        _coding_ctx(tmp_path, strategy="scroll"),
+    )
+    without = CodingModeContributor().contribute_sync(
+        _coding_ctx(tmp_path, strategy="native"),
+    )
+
+    assert "recall_history_python" in with_scroll
+    assert "reserved `ms` object" in with_scroll
+    assert "recall_history_python" not in without
+    assert "`ms`" not in without
+    assert "You call one tool directly: `repl_exec`" in without
+    # Everything else in the minimal persona is unchanged.
+    assert "paw.tools.<name>(...)" in without
+    assert "### Long-running commands" in without and "### Active project" in without
