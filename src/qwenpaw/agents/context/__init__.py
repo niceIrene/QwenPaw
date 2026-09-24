@@ -188,10 +188,15 @@ def build_scroll_components(
         recall_loop_guard = RecallLoopGuard()
         scratch_root = str(Path(workspace_dir) / ".scroll")
 
+        from ...config.codeact import codeact_repl_only
+
         manager = ScrollContextManager(
             history=history,
             session_id=session_id,
             agent_id=agent_id,
+            # Same derivation as the scroll system prompt's recall block, so
+            # the map's re-expand pointers name the tool the prompt teaches.
+            repl_only=codeact_repl_only(agent_config),
             # Legacy dialog archive is opt-in; only hand the manager an
             # offloader when configured, so by default scroll writes nothing
             # to dialog/.

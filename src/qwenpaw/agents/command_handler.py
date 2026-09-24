@@ -570,6 +570,7 @@ class CommandHandler(ConversationCommandHandlerMixin):
         ):
             return None
         try:
+            from ..config.codeact import codeact_repl_only
             from .context.scroll.history import HistoryStore
             from .context.scroll.manager import ScrollContextManager
 
@@ -589,6 +590,9 @@ class CommandHandler(ConversationCommandHandlerMixin):
                 # Already gated: the adapter only supplies an offloader when
                 # ``offload_dialog`` is on, so this archives iff configured.
                 offloader=self._offloader,
+                # Same derivation as the builder's manager, so the map this
+                # compaction renders names the recall tool the model has.
+                repl_only=codeact_repl_only(self._get_agent_config()),
             )
         except Exception:
             logger.exception("Failed to build scroll manager for /compact")

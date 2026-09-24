@@ -190,3 +190,31 @@ def test_tiny_index_budget_keeps_one_recallable_global_span():
     assert "details folded to fit context" in rendered
     assert "[seq 1–4]" in rendered
     assert 'recall_history(op="expand", lo=1, hi=4)' in rendered
+
+
+def test_repl_only_index_points_at_ms_expand():
+    """CodeAct repl-only mode hides the structured recall_history tool, so
+    every re-expand pointer in the map must name what the model can call:
+    ms.expand through recall_history_python."""
+    idx = EvictionIndex(session_id="s", repl_only=True)
+    _add(idx, 5, "did a thing")
+    out = idx.render()
+    assert "recall_history_python" in out
+    assert "ms.expand(lo, hi)" in out
+    assert "ms.search(keywords)" in out
+    assert "recall_history(" not in out
+    assert "more advanced Python recall tool" not in out
+
+    for seq in range(6, 10):
+        _add(idx, seq, f"headline-{seq}-" + "x" * 1000)
+    folded = idx.render(detail_char_budget=128)
+    assert "recover this span with ms.expand(5, 9)" in folded
+    assert "recall_history(" not in folded
+
+    # The default is unchanged for the structured tool.
+    assert (
+        'recall_history(op="expand", lo, hi)'
+        in EvictionIndex(
+            session_id="s",
+        ).render()
+    )

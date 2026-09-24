@@ -94,10 +94,15 @@ class ScrollContextManager:
         compact_tool_result_max_bytes: int | None = None,
         tool_results_dir: str | None = None,
         recall_loop_guard: Any = None,
+        repl_only: bool = False,
     ) -> None:
         self._history = history
         self._session_id = session_id
         self._agent_id = agent_id
+        # CodeAct repl-only mode: the structured ``recall_history`` tool is
+        # hidden, so every recall pointer the manager writes into context (the
+        # map banner, fold stubs) must name ``ms`` via recall_history_python.
+        self._repl_only = repl_only
         # Kept for constructor compatibility with older integrations. Scroll
         # no longer folds live tool results at a fixed byte threshold; it
         # reclaims them only while the rebuilt context remains under pressure.
@@ -136,7 +141,11 @@ class ScrollContextManager:
             int,
         ] = {}  # msg.id -> #non-result blocks persisted
         self._leaf_by_id: dict[str, Leaf] = {}  # msg.id -> its index leaf
-        self._index = EvictionIndex(session_id=session_id, agent_id=agent_id)
+        self._index = EvictionIndex(
+            session_id=session_id,
+            agent_id=agent_id,
+            repl_only=repl_only,
+        )
         self._continuation_summary: ContinuationSummary | None = None
         self._summary_update_failed = False
         # What the most recent compress() actually did — /compact reads this
@@ -178,10 +187,14 @@ class ScrollContextManager:
             if isinstance(block, dict)
             else getattr(block, "id", None)
         )
-        if tcid:
+        if tcid and self._repl_only:
+            where = f"ms.recall_tool({tcid!r}) in recall_history_python"
+        elif tcid:
             where = (
                 'recall_history(op="recall_tool", ' f"tool_call_id={tcid!r})"
             )
+        elif self._repl_only:
+            where = "ms.search(...) in recall_history_python"
         else:
             where = 'recall_history(op="search", query=...)'
         return (

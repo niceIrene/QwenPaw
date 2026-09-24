@@ -42,59 +42,27 @@ _FRESH_PROCESS_NOTE = (
 # sandboxed process imports it by bare module name.
 _PKG_DIR = str(Path(__file__).parent)
 
-_DOC = """Recall conversation history via Python — the ADVANCED recall tool.
+# Deliberately a stub: the recall method (how to search, filter, read and
+# reshape history with ``ms``) is taught once, in the scroll system prompt's
+# RECALL section (``prompt.py``, repl-only variant). This description carries
+# only what the prompt cannot know — the tool's runtime contract.
+_DOC = """Recall conversation history by running a Python cell against `ms`.
 
-When a `recall_history` tool is available, prefer it for ordinary
-expand/search/recall_tool reads. Use this sandboxed Python tool for session
-listing, custom SQL counting/ranking, scratch tables, or cross-referencing
-many turns.
-
-`ms` is ALREADY DEFINED; use it directly (do not import it). Cells normally
-run in the shared CodeAct kernel: variables, imports and defs PERSIST across
-calls, so keep results in variables and re-slice them, don't re-query. (A
-result ending in `[fresh process]` kept only `ms` and `ms.sql_exec` tables.)
-Only printed stdout is returned.
+`ms` is ALREADY DEFINED; use it directly (do not import it). Its surface
+(ms.search, ms.expand, ms.sql_query, ms.sql_exec, ms.sessions, ms.session,
+ms.recall_tool, ms.days_between, ms.agents) and how to search, filter, read
+and reshape history with it are described in the RECALL section of your
+system prompt. Cells normally run in the shared CodeAct kernel: variables,
+imports and defs PERSIST across calls. (A result ending in `[fresh process]`
+kept only `ms` and `ms.sql_exec` tables.) Only printed stdout is returned.
 
 KEEP STDOUT BOUNDED: the per-cell cap scales with the model's context window
 (8-32 KB). Past it you get a notice and a short head, never the rest, and
-there is no continuation cursor. Print one short line per row (seq, role, a
-content slice), never whole rows; after an overflow re-slice the SAME
-variable instead of re-running the query. Page with SQL `LIMIT ? OFFSET ?`.
-
-Helpers return `list[dict]`; text is always in `content` (not
-`content_preview`). Row keys differ: `search` rows lack `created_at`,
-`expand` rows lack `session_id` — use `row.get(...)` or `ms.sql_query`. A
-trailing `{"_truncated": True}` row (no other keys) means the row cap was
-hit: skip it, then narrow or page.
-
-  • ms.expand(lo, hi)
-    Raw turns for an inclusive seq span, oldest first.
-  • ms.search(query, k=10, kind=None, all_agents=False,
-              session_id=None, agent_id=None)
-    Ranked FTS across your sessions. Bare words are AND-combined (stemmed);
-    uppercase OR widens. Words only: no phrases, parentheses or `*`.
-  • ms.recall_tool(tool_call_id, all_agents=False)
-    Tool call/result; saved large outputs include an artifact file pointer.
-  • ms.sessions(all_agents=False, limit=50)
-  • ms.session(session_id, all_agents=False, limit=200)
-  • ms.agents(limit=50)
-  • ms.days_between(d1, d2, inclusive=False)
-  • ms.sql_query(sql, params)
-    Read-only SQL; durable history is `hist.conversation_history`.
-  • ms.sql_exec(sql, params)
-    Writes only the persistent scratch DB. Always bind values via `params`.
-
-Typical flow: locate seqs with `ms.search`, read only the needed range with
-`ms.expand`. For filters search lacks (role, date), use SQL:
-
-    rows = ms.sql_query(
-        "SELECT seq, role, created_at, content "
-        "FROM hist.conversation_history WHERE seq BETWEEN ? AND ? "
-        "AND role = ? ORDER BY seq LIMIT ? OFFSET ?",
-        (lo, hi, "user", 20, offset),
-    )
-    for row in rows:
-        print(row["seq"], row["created_at"], row["content"][:200])
+there is no continuation cursor; re-slice the SAME variable instead of
+re-running the query. Helpers return `list[dict]` with the text in `content`;
+`search` rows lack `created_at`, `expand` rows lack `session_id`. A trailing
+`{"_truncated": True}` row (no other keys) means the row cap was hit: skip
+it, then narrow or page.
 
 Args:
     source (str): Python source to execute.

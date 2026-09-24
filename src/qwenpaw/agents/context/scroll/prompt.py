@@ -4,8 +4,13 @@
 Injected only when ``strategy == "scroll"`` (see
 :class:`qwenpaw.runtime.prompt_contributors.ScrollContextContributor`). It
 teaches what the model must know for the eviction index to be useful: how to
-write useful milestone headlines, read the ``[context compressed]`` map,
-recall via the structured ``recall_history`` tool, and stop or abstain.
+write useful milestone headlines, read the ``[context compressed]`` map and
+treat it as a directory rather than evidence, recall via the structured
+``recall_history`` tool, and stop or abstain. In CodeAct repl-only mode the
+recall paragraph instead teaches the ``ms`` surface and the recall loop
+(search wide, filter in code, read, reshape), and is the single place that
+method is documented: the ``recall_history_python`` tool description is a
+stub that covers only the tool's runtime contract.
 
 Headlines are emitted as a trailing plain-text fence (``⟦ … ⟧``). Display
 paths hide that protocol line while durable history keeps it available for
@@ -94,6 +99,19 @@ DISCIPLINE:
     source of truth for any fact ever said, asked, done, or decided. When a
     question turns on such a fact and it's not in your live context, recall it
     FIRST; don't guess from an index label or refuse before searching.
+  • The map is a directory, not evidence. Headlines are lossy labels that may
+    omit or compress exact numbers, versions, prices, and names; one that
+    looks like a complete answer is NOT evidence. Before using any specific
+    fact, value, or quote, confirm it in the original turns — expand the span
+    or search the full text. Many entries on a topic do not imply the specific
+    fact asked was ever stated: if no turn states it, say it is not in the
+    history rather than reconstructing it from related discussion. For a
+    summary, expand spans across the whole requested range; the map alone is
+    never sufficient material.
+  • The map indexes your own headlines, so assistant turns only — facts the
+    USER stated (their numbers, preferences, decisions, progress) never appear
+    as entries. For anything the user said, chose, or prefers, search the full
+    history for their own words; never infer a user statement from a headline.
   • For exhaustive lists/counts, search across sessions and alternate wording,
     then deduplicate things the user actually confirmed or did; exclude plans,
     repeated mentions, and assistant suggestions. For facts that changed, use
@@ -170,6 +188,15 @@ headline 不代表对整个历史区间的总结。
   • recall 是过去对话的完整记录——任何说过、问过、做过或决定过
     的事实的真相来源。当一个问题取决于这样的事实、而它又不在你当前上下文里时，
     先把它 recall 回来；不要凭索引标签猜，也不要在搜过之前就拒答。
+  • 地图只是目录，不是证据。headline 是有损标签，可能省略或压缩精确的数字、版本、
+    价格和名称；看起来像完整答案的 headline 也不是证据。在使用任何具体事实、数值或
+    引文之前，先到原始轮次里确认——expand 该 seq 区间，或全文搜索。某个话题有很多条目
+    并不代表被问到的那个具体事实曾被说过：如果没有任何轮次明确说过，就说明历史里
+    没有，而不是从相关讨论里拼凑一个答案。做总结时，要 expand 覆盖整个所问范围的
+    区间；仅凭地图永远不够。
+  • 地图索引的是你自己写的 headline，也就是只有 assistant 轮次——用户陈述的事实
+    （他们的数字、偏好、决定、进展）从不作为条目出现。凡是用户说过、选过或偏好的
+    东西，都要用他们自己的原话去全文搜索；绝不能从 headline 推断用户说过什么。
   • 对“全部列出/多少个”这类问题，要跨会话并换关键词搜索，然后只对用户明确确认或
     实际做过的事项去重；排除计划、重复提及和 assistant 的建议。事实随时间变化时，
     以日期最新的用户证据为准；不能用相近但不同的事实代替用户问的精确对象。
@@ -203,39 +230,69 @@ search your history with
 ``recall_history_python`` using ``ms.search(...)``.
 
 RECALL with the ``recall_history_python`` tool: pass it a Python cell using
-the pre-bound ``ms`` surface — ``ms.search("keywords", k=10)`` to find turns,
-``ms.expand(lo, hi)`` to read a seq span in full,
-``ms.sql_query("SELECT ... FROM hist.conversation_history ...")`` for
-structured filters, ``ms.days_between(d1, d2)`` for calendar gaps. After the
-first recall call, ``ms`` is also bound inside the shared ``repl_exec``
-kernel. Recall defaults to your own history (across all your sessions); pass
+the pre-bound ``ms`` surface. ``ms.search(query, k=10, kind=None,
+session_id=None, all_agents=False)`` finds turns by ranked full-text search;
+``ms.expand(lo, hi)`` reads an inclusive seq span in full;
+``ms.sql_query(sql, params)`` runs read-only SQL over the same history
+(``hist.conversation_history`` and its FTS index
+``hist.conversation_history_fts``); ``ms.days_between(d1, d2)`` gives the
+calendar gap; ``ms.sessions()`` lists your sessions and ``ms.session(id)``
+reads one; ``ms.recall_tool(tool_call_id)`` re-reads a tool call and its
+result; ``ms.sql_exec(sql, params)`` writes scratch tables. Every helper
+returns ``list[dict]`` with the text in ``content``. After the first recall
+call, ``ms`` is also bound inside the shared ``repl_exec`` kernel. Recall
+defaults to your own history (across all your sessions); pass
 ``all_agents=True`` to widen to other agents' turns.
 
-RECALL LOOP — retrieve, triage, read, reshape:
+RECALL LOOP — search wide, keep, filter in code, read, reshape:
   • Keep every result in a variable (``hits = ms.search(...)``). Variables
-    persist across cells and cell output is capped, so print one short line
-    per hit — ``seq``, ``role``, a slice of ``content`` — never whole rows. If
-    output comes back truncated the variable still holds all of it: print a
-    smaller slice; do not re-run the query.
+    persist across cells and printed output is capped, so print one short
+    line per hit — ``seq``, ``role``, a slice of ``content`` — never whole
+    rows. If output comes back cut, nothing is lost: print a smaller or later
+    slice of the same variable; do not re-run the query.
   • ``ms.search`` AND-combines bare words (stemmed, so inflections already
     match); join synonyms with uppercase ``OR``. It takes words only — no
     quoted phrases, parentheses or ``*``. A thin result is usually an
     over-constrained query: drop words or add ``OR`` alternatives before
-    concluding a fact is absent.
-  • Search hits carry the full turn text and no timestamp. When you need a
-    role or date filter, or a ranked match-centred preview of many hits, use
-    SQL over the same index:
-    ``SELECT ch.seq, ch.role, ch.created_at,
-    snippet(conversation_history_fts, 0, '', '', ' … ', 24) AS snip
-    FROM hist.conversation_history_fts JOIN hist.conversation_history ch
-    ON ch.seq = conversation_history_fts.rowid
-    WHERE conversation_history_fts MATCH ? AND ch.role = 'user'
-    ORDER BY bm25(conversation_history_fts) LIMIT 15``
-    (``MATCH`` also accepts ``"exact phrase"`` and parentheses). Avoid
-    ``LIKE '%word%'`` scans: unranked, unstemmed, and they return long lists.
-  • Then read only the turns that matter with ``ms.expand(lo, hi)``, printing
-    bounded slices, and reshape what you keep (dict, list, counter) instead
-    of retrieving it again."""
+    concluding a fact is absent. When a question names several entities,
+    search each one separately instead of putting every name in one AND
+    query.
+  • Search hits carry the full turn text but no timestamp. Ranked search with
+    filters is one SQL query over the FTS index; compose only the clauses you
+    need:
+      base     ``SELECT ch.seq, ch.role, ch.session_id,
+               substr(ch.created_at, 1, 10) AS d, ch.content AS text
+               FROM hist.conversation_history_fts
+               JOIN hist.conversation_history ch
+               ON ch.seq = conversation_history_fts.rowid
+               WHERE conversation_history_fts MATCH ?
+               ORDER BY bm25(conversation_history_fts) LIMIT ?``
+      role     ``AND ch.role = ?`` — 'user' or 'assistant'
+      date     ``AND substr(ch.created_at, 1, 10) BETWEEN ? AND ?``
+      session  ``AND ch.session_id = ?``
+      preview  ``snippet(conversation_history_fts, 0, '', '', ' … ', 64)``
+               in place of ``ch.content`` — a glance at many candidates; take
+               the full content for anything you will filter, count, or quote.
+    ``MATCH`` accepts words, uppercase OR/AND/NOT, ``"exact phrase"`` and
+    parentheses; if it rejects the text, quote each word. Bind values through
+    ``params``. Avoid ``LIKE '%word%'`` scans: unranked, unstemmed, and they
+    return long lists.
+  • Search WIDE (k=50 or more) into a variable and let Python choose: keep
+    the rows whose text matches the wording the question turns on
+    (``re.search``), merge several searches in a dict keyed by ``seq``, dedupe
+    with a set, count with ``collections.Counter``, order by ``d``; then print
+    the size and a short sample, never the rows. A snippet shows one part of
+    a turn — never decide from a snippet that a turn lacks a second fact.
+  • For an ordering, a period, or a summary, first map sessions to dates:
+    ``SELECT session_id, substr(min(created_at), 1, 10) AS d, count(*) AS n,
+    min(seq) AS lo, max(seq) AS hi FROM hist.conversation_history
+    GROUP BY session_id ORDER BY lo``, then search inside that span with the
+    date or session clause, or expand it. ``ms.days_between(d1, d2)`` gives
+    elapsed days.
+  • Then read only the turns that matter: ``ms.expand(seq, seq + 1)`` returns
+    a turn and its reply (expand rows carry no date — take it from the
+    search). Print bounded slices such as ``r['content'][:600]`` and reshape
+    what you keep (dict, list, counter) instead of retrieving it again."""
 
 _SCROLL_RECALL_BLOCK_ZH = """\
 用 ``recall_history(op="search", …)`` 搜
@@ -251,32 +308,57 @@ _SCROLL_RECALL_BLOCK_ZH_REPL_ONLY = """\
 你的历史。
 
 用 ``recall_history_python`` 工具来 RECALL：传给它一个使用预绑定 ``ms`` 表面的
-Python cell——``ms.search("关键词", k=10)`` 找轮次，``ms.expand(lo, hi)`` 按 seq
-区间读全文，``ms.sql_query("SELECT ... FROM hist.conversation_history ...")``
-做结构化过滤，``ms.days_between(d1, d2)`` 算日期间隔。第一次 recall 调用之后，
-``ms`` 也会绑定到共享的 ``repl_exec`` kernel 里。recall 默认查你自己的历史（跨你
-的所有会话）；传 ``all_agents=True`` 可扩大到其他 agent 的轮次。
+Python cell。``ms.search(query, k=10, kind=None, session_id=None,
+all_agents=False)`` 用带排序的全文检索找轮次；``ms.expand(lo, hi)`` 按 seq 闭区间
+读全文；``ms.sql_query(sql, params)`` 对同一份历史（``hist.conversation_history``
+及其 FTS 索引 ``hist.conversation_history_fts``）执行只读 SQL；
+``ms.days_between(d1, d2)`` 算日期间隔；``ms.sessions()`` 列出你的会话，
+``ms.session(id)`` 读其中一个；``ms.recall_tool(tool_call_id)`` 重读某次工具调用
+及其结果；``ms.sql_exec(sql, params)`` 写 scratch 表。所有 helper 都返回
+``list[dict]``，正文在 ``content`` 里。第一次 recall 调用之后，``ms`` 也会绑定到
+共享的 ``repl_exec`` kernel 里。recall 默认查你自己的历史（跨你的所有会话）；传
+``all_agents=True`` 可扩大到其他 agent 的轮次。
 
-RECALL 循环——检索、筛选、阅读、重塑：
+RECALL 循环——搜得宽、存变量、用代码过滤、阅读、重塑：
   • 把每次结果存进变量（``hits = ms.search(...)``）。变量在 cell 之间会保留，而
-    cell 输出有上限，所以每条命中只打印一行短内容——``seq``、``role``、
-    ``content`` 的一小段——不要打印整行。如果输出被截断，变量里仍然是完整结果：
-    打印更小的切片，不要重新执行查询。
+    打印输出有上限，所以每条命中只打印一行短内容——``seq``、``role``、
+    ``content`` 的一小段——不要打印整行。如果输出被截断，什么都没丢：打印同一个
+    变量更小或更靠后的切片，不要重新执行查询。
   • ``ms.search`` 对裸词做 AND 组合（已做词干化，词形变化自动匹配）；同义词用大写
     ``OR`` 连接。它只接受词——不支持带引号的短语、括号或 ``*``。结果很少通常是查询
-    约束过紧：先去掉一些词或加 ``OR`` 备选，再下“没有这条信息”的结论。
-  • 搜索命中带有整轮全文，但没有时间戳。需要按 role 或日期过滤，或者要对大量命中
-    做带排序、以匹配处为中心的预览时，对同一索引使用 SQL：
-    ``SELECT ch.seq, ch.role, ch.created_at,
-    snippet(conversation_history_fts, 0, '', '', ' … ', 24) AS snip
-    FROM hist.conversation_history_fts JOIN hist.conversation_history ch
-    ON ch.seq = conversation_history_fts.rowid
-    WHERE conversation_history_fts MATCH ? AND ch.role = 'user'
-    ORDER BY bm25(conversation_history_fts) LIMIT 15``
-    （``MATCH`` 还支持 ``"精确短语"`` 和括号）。避免 ``LIKE '%词%'`` 扫描：
+    约束过紧：先去掉一些词或加 ``OR`` 备选，再下“没有这条信息”的结论。问题里出现
+    多个实体时，逐个分开搜索，不要把所有名字放进一个 AND 查询。
+  • 搜索命中带有整轮全文，但没有时间戳。带过滤条件的排序检索就是对 FTS 索引的一条
+    SQL；只组合你需要的子句：
+      基础    ``SELECT ch.seq, ch.role, ch.session_id,
+              substr(ch.created_at, 1, 10) AS d, ch.content AS text
+              FROM hist.conversation_history_fts
+              JOIN hist.conversation_history ch
+              ON ch.seq = conversation_history_fts.rowid
+              WHERE conversation_history_fts MATCH ?
+              ORDER BY bm25(conversation_history_fts) LIMIT ?``
+      角色    ``AND ch.role = ?``——'user' 或 'assistant'
+      日期    ``AND substr(ch.created_at, 1, 10) BETWEEN ? AND ?``
+      会话    ``AND ch.session_id = ?``
+      预览    用 ``snippet(conversation_history_fts, 0, '', '', ' … ', 64)``
+              代替 ``ch.content``——快速扫一眼大量候选；凡是要过滤、计数或引用的，
+              取全文。
+    ``MATCH`` 接受词、大写 OR/AND/NOT、``"精确短语"`` 和括号；如果它拒绝了查询文本，
+    把每个词加引号。数值一律通过 ``params`` 绑定。避免 ``LIKE '%词%'`` 扫描：
     没有排序、没有词干化，而且会返回很长的列表。
-  • 然后只用 ``ms.expand(lo, hi)`` 阅读真正重要的轮次，打印有上限的切片，并把要
-    保留的内容重塑成合适的结构（dict、list、counter），而不是再检索一遍。"""
+  • 搜得宽（k=50 或更多）存进变量，让 Python 来挑：用 ``re.search`` 保留正文匹配
+    问题关键措辞的行，用以 ``seq`` 为键的 dict 合并多次搜索，用 set 去重，用
+    ``collections.Counter`` 计数，按 ``d`` 排序；然后只打印数量和一小段样本，不要
+    打印行。snippet 只显示一轮的一部分——绝不能凭 snippet 断定某轮没有第二个事实。
+  • 涉及先后顺序、时间段或总结时，先把会话映射到日期：
+    ``SELECT session_id, substr(min(created_at), 1, 10) AS d, count(*) AS n,
+    min(seq) AS lo, max(seq) AS hi FROM hist.conversation_history
+    GROUP BY session_id ORDER BY lo``，然后用日期或会话子句在该范围内搜索，或直接
+    expand。``ms.days_between(d1, d2)`` 给出相隔天数。
+  • 然后只阅读真正重要的轮次：``ms.expand(seq, seq + 1)`` 返回一轮及其回复
+    （expand 的行没有日期——从搜索结果里取）。打印有上限的切片，例如
+    ``r['content'][:600]``，并把要保留的内容重塑成合适的结构（dict、list、
+    counter），而不是再检索一遍。"""
 
 _REPL_ONLY_RECALL_BLOCKS = {
     "zh": (_SCROLL_RECALL_BLOCK_ZH, _SCROLL_RECALL_BLOCK_ZH_REPL_ONLY),

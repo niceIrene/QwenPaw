@@ -401,15 +401,13 @@ class ScrollContextContributor(SyncPromptContributor):
         if strategy != "scroll":
             return None
         from ..agents.context.scroll.prompt import build_scroll_system_prompt
+        from ..config.codeact import codeact_repl_only
 
-        codeact = getattr(agent_config, "codeact", None)
-        repl_only = bool(
-            codeact
-            and getattr(codeact, "enabled", False)
-            and getattr(codeact, "tool_routing", None) == "repl-only"
-        )
         language = getattr(agent_config, "language", "en")
-        return build_scroll_system_prompt(language, repl_only=repl_only)
+        return build_scroll_system_prompt(
+            language,
+            repl_only=codeact_repl_only(agent_config),
+        )
 
 
 class EnvContextContributor(SyncPromptContributor):

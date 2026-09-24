@@ -2175,3 +2175,22 @@ def test_tool_input_round_trips_to_db(store: HistoryStore):
         "WHERE tool_call_id='call-9'",
     ).fetchone()
     assert row["tool_input"] == '{"pattern": "x"}'
+
+
+def test_repl_only_fold_stub_points_at_ms(tmp_path):
+    """The fold stub must name a tool the model has: in repl-only mode that
+    is ms.recall_tool through recall_history_python, not recall_history."""
+    store = HistoryStore(tmp_path / "h.db")
+    block = {"id": "call_1", "type": "tool_result"}
+    default = make_manager(store)._tool_result_pointer_stub(block)
+    assert (
+        "recall_history(op=\"recall_tool\", tool_call_id='call_1')" in default
+    )
+    repl = make_manager(store, repl_only=True)._tool_result_pointer_stub(block)
+    assert "ms.recall_tool('call_1') in recall_history_python" in repl
+    assert "recall_history(" not in repl
+    no_id = make_manager(store, repl_only=True)._tool_result_pointer_stub({})
+    assert "ms.search(...) in recall_history_python" in no_id
+    # And the index the manager renders carries the same pointer.
+    manager = make_manager(store, repl_only=True)
+    assert manager._index._repl_only is True

@@ -144,9 +144,19 @@ def _collapse(blocks: list[Block]) -> Block:
 class EvictionIndex:
     """A stack of tiers, each a list of blocks oldest-first."""
 
-    def __init__(self, session_id: str, agent_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        agent_id: str | None = None,
+        *,
+        repl_only: bool = False,
+    ) -> None:
         self._session_id = session_id
         self._agent_id = agent_id
+        # CodeAct repl-only mode hides the structured ``recall_history`` tool,
+        # so the map's re-expand pointers must name what the model can call:
+        # ``ms.expand`` through ``recall_history_python``.
+        self._repl_only = repl_only
         self._tiers: list[list[Block]] = []
 
     @property
@@ -289,12 +299,19 @@ class EvictionIndex:
             "turns follow after the banner at the end. Each '·' line is a seq "
             "span you can re-expand.",
             "",
-            "Re-expand a span with the recall_history tool: "
-            'recall_history(op="expand", lo, hi) for the full turns (seq is '
-            "a globally-unique address, so a span needs no other filter); "
-            'op="search" finds a seq by keywords. For advanced recall '
-            "(sessions, custom SQL) use a more advanced Python recall tool "
-            "if one is available to you.",
+            (
+                "Re-expand a span with the recall_history_python tool: "
+                "ms.expand(lo, hi) for the full turns (seq is a "
+                "globally-unique address, so a span needs no other filter); "
+                "ms.search(keywords) finds a seq by keywords."
+                if self._repl_only
+                else "Re-expand a span with the recall_history tool: "
+                'recall_history(op="expand", lo, hi) for the full turns (seq '
+                "is a globally-unique address, so a span needs no other "
+                'filter); op="search" finds a seq by keywords. For advanced '
+                "recall (sessions, custom SQL) use a more advanced Python "
+                "recall tool if one is available to you."
+            ),
             "",
         ]
         out.extend(
@@ -413,9 +430,13 @@ class EvictionIndex:
             return []
         lo = min(block.seq_lo for block in blocks)
         hi = max(block.seq_hi for block in blocks)
+        recover = (
+            f"ms.expand({lo}, {hi})"
+            if self._repl_only
+            else f'recall_history(op="expand", lo={lo}, hi={hi})'
+        )
         return [
             "===== Archived index (details folded to fit context) =====",
             f"  [seq {lo}–{hi}]",
-            "    · Index details omitted; recover this span with "
-            f'recall_history(op="expand", lo={lo}, hi={hi})',
+            f"    · Index details omitted; recover this span with {recover}",
         ]

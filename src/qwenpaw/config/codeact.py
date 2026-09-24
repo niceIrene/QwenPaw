@@ -13,6 +13,8 @@ no REPL tool). Additive only; a no-op product-wise when not called.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 def apply_codeact_mode(
     agent_id: str,
@@ -80,4 +82,21 @@ def apply_codeact_mode(
     save_agent_config(agent_id, config)
 
 
-__all__ = ["apply_codeact_mode"]
+def codeact_repl_only(agent_config: Any) -> bool:
+    """Whether ``agent_config`` runs CodeAct repl-only routing.
+
+    The one derivation shared by everything that must know the structured
+    ``recall_history`` tool is hidden from the model: the scroll system
+    prompt's recall block, the eviction index's re-expand banner, and the
+    manager's fold stubs. They must agree, or one of them sends the model
+    after a tool it cannot call.
+    """
+    codeact = getattr(agent_config, "codeact", None)
+    return bool(
+        codeact
+        and getattr(codeact, "enabled", False)
+        and getattr(codeact, "tool_routing", None) == "repl-only",
+    )
+
+
+__all__ = ["apply_codeact_mode", "codeact_repl_only"]

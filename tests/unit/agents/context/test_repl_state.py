@@ -22,15 +22,15 @@ from qwenpaw.agents.context.scroll.repl import (
 )
 
 
-def test_tool_description_is_bounded_and_keeps_execution_contract():
+def test_tool_description_is_a_runtime_contract_stub():
     size = len(_DOC.encode("utf-8"))
-    # Sent with every request, so it stays small; 2700 leaves room for the
-    # row-shape and persistence contract the model was otherwise guessing.
-    assert 1500 <= size <= 2700
+    # Sent with every request. The recall method lives once, in the scroll
+    # prompt's RECALL section; this description keeps only the runtime
+    # contract (persistence, output cap, row shapes) and a pointer there.
+    assert 600 <= size <= 1400
     for required in (
-        # Only "when available": repl-only mode hides `recall_history`.
-        "When a `recall_history` tool is available, prefer it",
         "`ms` is ALREADY DEFINED",
+        "RECALL section of your",
         # The shared kernel keeps variables; the fallback path says when not.
         "PERSIST across",
         "[fresh process]",
@@ -39,24 +39,48 @@ def test_tool_description_is_bounded_and_keeps_execution_contract():
         "a notice and a short head",
         "re-slice the SAME",
         "`search` rows lack `created_at`",
+        "`expand` rows lack `session_id`",
         '{"_truncated": True}',
-        "no phrases, parentheses or `*`",
-        "LIMIT ? OFFSET ?",
-        "ms.expand(lo, hi)",
-        "ms.search(query",
-        "ms.recall_tool(tool_call_id",
-        "ms.sql_query(sql, params)",
+        "source (str)",
     ):
         assert required in _DOC
-    assert "ANSWERING FROM RECALL" not in _DOC
-    # The old blanket warning contradicted the shared kernel's behaviour.
-    assert "do not rely on leftover variables" not in _DOC
-    # Documented defaults must match MemorySpace (they had drifted).
-    assert "ms.session(session_id, all_agents=False, limit=200)" in _DOC
-    assert "ms.agents(limit=50)" in _DOC
-    # The worked example must itself fit the output budget it preaches.
-    assert '["content"][:200]' in _DOC
-    assert '["content"][:2000]' not in _DOC
+    # The surface is named so the tool is not opaque where the system prompt
+    # does not teach `ms` (standard scroll mode), but not described: no
+    # signatures, no grammar, no worked example, no method paragraph.
+    for name in ("ms.search", "ms.expand", "ms.sql_query", "ms.recall_tool"):
+        assert name in _DOC
+    for duplicated in (
+        "ms.search(query",
+        "AND-combined",
+        "uppercase OR",
+        "SELECT ",
+        "LIMIT ? OFFSET ?",
+        "Typical flow",
+        "prefer it",
+        "ANSWERING FROM RECALL",
+        "do not rely on leftover variables",
+    ):
+        assert duplicated not in _DOC, duplicated
+
+
+def test_scroll_prompt_owns_the_recall_method():
+    from qwenpaw.agents.context.scroll.prompt import (
+        build_scroll_system_prompt,
+    )
+
+    prompt = build_scroll_system_prompt("en", repl_only=True)
+    # Everything the stub dropped is taught there, once.
+    for taught in (
+        "ms.search(query, k=10",
+        "ms.expand(lo, hi)",
+        "ms.sql_query(sql, params)",
+        "ms.recall_tool(tool_call_id)",
+        "ms.sessions()",
+        "ms.days_between(d1, d2)",
+        "AND-combines bare words",
+        "conversation_history_fts MATCH ?",
+    ):
+        assert taught in prompt, taught
 
 
 async def test_fallback_cells_say_their_variables_were_not_kept(run):
