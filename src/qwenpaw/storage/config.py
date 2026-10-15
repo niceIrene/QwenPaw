@@ -16,7 +16,7 @@ _IDENTIFIER = re.compile(f"[a-z][a-z0-9_]*")
 class PostgreSQLConfig(BaseModel):
     """Connection settings for one application-owned namespace."""
 
-    model_config = ConfigDict(extra=f"forbid")
+    model_config = ConfigDict(extra=f"forbid", populate_by_name=True)
     dsn_env: str = f"QWENPAW_POSTGRES_DSN"
     schema_name: str = Field(default=f"qwenpaw", alias=f"schema")
     table_prefix: str = f""
