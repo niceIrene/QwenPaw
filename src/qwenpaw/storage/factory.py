@@ -10,8 +10,6 @@ from weakref import WeakSet
 
 from ..agents.context.scroll.history import HistoryStore as LegacyHistoryStore
 from .backends.sqlite.legacy_history import SQLiteHistoryStore
-from .backends.postgres.database import PostgresDatabase
-from .backends.sqlite.database import SQLiteDatabase
 from .config import StorageBackend, StorageConfig
 from .contracts.database import Database
 from .contracts.history import HistoryStore
@@ -25,11 +23,13 @@ from .schema import initialize, validate
 
 def create_database(config: StorageConfig, root: Path) -> Database:
     """Select transport without opening connections or creating data."""
-    drivers = {
-        StorageBackend.SQLITE: SQLiteDatabase,
-        StorageBackend.POSTGRESQL: PostgresDatabase,
-    }
-    return drivers[config.backend](config, root)
+    if config.backend == StorageBackend.POSTGRESQL:
+        from .backends.postgres.database import PostgresDatabase
+
+        return PostgresDatabase(config, root)
+    from .backends.sqlite.database import SQLiteDatabase
+
+    return SQLiteDatabase(config, root)
 
 
 class StorageRuntime:
