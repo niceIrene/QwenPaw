@@ -43,6 +43,8 @@ from .continuation_summary import (
 )
 from .eviction_index import EvictionIndex, Leaf, render_live_turn_banner
 from .history import HistoryStore
+from ....storage.contracts.history import HistoryStore as AsyncHistoryStore
+from ....storage.errors import StorageError
 from .serialize import msg_to_entries
 from ..types import ContextWindowUnfitError
 from ...utils.tool_message_utils import _remove_unpaired_tool_messages
@@ -87,7 +89,7 @@ class ScrollContextManager:
     def __init__(
         self,
         *,
-        history: HistoryStore,
+        history: HistoryStore | AsyncHistoryStore,
         session_id: str,
         agent_id: str | None = None,
         offloader: Any = None,
@@ -96,6 +98,8 @@ class ScrollContextManager:
         recall_loop_guard: Any = None,
     ) -> None:
         self._history = history
+        self._async_history = isinstance(history, AsyncHistoryStore)
+        self._persist_lock = asyncio.Lock()
         self._session_id = session_id
         self._agent_id = agent_id
         # Kept for constructor compatibility with older integrations. Scroll
@@ -258,8 +262,11 @@ class ScrollContextManager:
         Only disk/SQLite failures are swallowed (recorded as degraded
         durability) so the chat loop survives a write outage; any other
         exception is a real bug and is left to propagate rather than hidden.
+        Remote history stays in the live context until compression or the
+        asynchronous session-save boundary awaits its writes.
         """
-        self._persist_guarded(agent)
+        if not self._async_history:
+            self._persist_guarded(agent)
 
     def model_input_tool_result_ids(self, agent: Any) -> set[str]:
         """Snapshot tool results about to be submitted to the model.
@@ -347,15 +354,50 @@ class ScrollContextManager:
             return False
 
     async def _persist_guarded_async(self, agent: Any) -> bool:
-        """Run :meth:`_persist_guarded` off the event loop.
+        """Offload local SQLite work or await the native async history driver.
 
-        ``compress`` is async and can persist the whole live window, which is
-        the write worth keeping off the loop. The synchronous SQLite work runs
-        in a worker thread; ``HistoryStore``'s connection is opened
-        ``check_same_thread=False`` and every access is serialized by its lock,
-        so this coexists safely with a concurrent on-loop ``on_save``.
+        Both paths advance dedup bookkeeping only after each write completes.
+        Remote writes are serialized across compression and checkpoint flushes.
         """
-        return await asyncio.to_thread(self._persist_guarded, agent)
+        if not self._async_history:
+            return await asyncio.to_thread(self._persist_guarded, agent)
+        async with self._persist_lock:
+            if self._history.closed:
+                return False
+            if self._recall_loop_guard is not None:
+                active = self._active_turn_tail(agent)
+                turn_id = getattr(active[0], "id", None) if active else None
+                self._recall_loop_guard.begin_turn(turn_id)
+            operations = self._persist_operations(agent)
+            result = None
+            try:
+                while True:
+                    try:
+                        operation = operations.send(result)
+                    except StopIteration:
+                        return True
+                    result = await operation
+            except StorageError as exc:
+                self._history.note_write_failure(exc)
+                logger.exception(
+                    "ScrollContextManager async persistence failed",
+                )
+                return False
+            finally:
+                operations.close()
+
+    async def flush(self, agent: Any) -> None:
+        """Await pending remote history before taking a session snapshot."""
+        if self._async_history and not await self._persist_guarded_async(
+            agent,
+        ):
+            raise StorageError("Cannot checkpoint uncommitted scroll history")
+
+    async def _read_history(self, method: str, *args):
+        operation = getattr(self._history, method)
+        if self._async_history:
+            return await operation(*args)
+        return await asyncio.to_thread(operation, *args)
 
     async def _offload_dialog(self, middle: list[Msg]) -> None:
         """Best-effort legacy ``dialog/*.jsonl`` archive of evicted turns.
@@ -427,6 +469,8 @@ class ScrollContextManager:
         9. active-fold— if above the hard limit, fold old active-turn
                          results that a successful model call already read.
         """
+        if self._async_history:
+            await self.reconcile_loaded_context_async(agent)
         cfg = context_config or agent.context_config
         self.last_compress = {
             "evicted": 0,
@@ -785,11 +829,11 @@ class ScrollContextManager:
             "Z",
         )
 
-    def _durable_folded_result_contents(
+    def _folded_result_seqs(
         self,
         messages: list[Msg],
-    ) -> dict[tuple[str, int], str | None]:
-        """Recover pre-folded tool output by its exact persisted seq."""
+    ) -> dict[tuple[str, int], int]:
+        """Collect the exact durable rows needed to expand folded results."""
         result_seqs: dict[tuple[str, int], int] = {}
         for msg in messages:
             mid = getattr(msg, "id", None) or str(id(msg))
@@ -810,9 +854,32 @@ class ScrollContextManager:
                         result_seqs[(mid, result_position)] = seq
                 result_position += 1
 
+        return result_seqs
+
+    def _durable_folded_result_contents(
+        self,
+        messages: list[Msg],
+    ) -> dict[tuple[str, int], str | None]:
+        """Recover pre-folded tool output from local history."""
+        result_seqs = self._folded_result_seqs(messages)
         contents = self._history.contents_by_seqs(set(result_seqs.values()))
         return {
             key: contents.get(seq)
+            for key, seq in result_seqs.items()
+            if seq in contents
+        }
+
+    async def _durable_folded_result_contents_async(
+        self,
+        messages: list[Msg],
+    ) -> dict[tuple[str, int], str | None]:
+        result_seqs = self._folded_result_seqs(messages)
+        contents = await self._read_history(
+            "contents_by_seqs",
+            set(result_seqs.values()),
+        )
+        return {
+            key: contents[seq]
             for key, seq in result_seqs.items()
             if seq in contents
         }
@@ -1216,7 +1283,11 @@ class ScrollContextManager:
         self._continuation_summary = None
         return None
 
-    def reconcile_loaded_context(self, agent: Any) -> bool:
+    def reconcile_loaded_context(
+        self,
+        agent: Any,
+        existing_endpoints: set[int] | None = None,
+    ) -> bool:
         """Remove an expired summary from a restored model-facing context.
 
         Session state is normally saved before retention purges durable
@@ -1225,10 +1296,14 @@ class ScrollContextManager:
         eagerly, before the below-trigger fast path can return, and rebuild
         the synthetic memory message without the unsupported summary.
         """
+        if self._async_history and existing_endpoints is None:
+            # load_state_dict is synchronous; validate at the async boundary.
+            return False
         previous = self._continuation_summary
         if (
             previous is None
-            or self._source_backed_previous_summary() is not None
+            or self._source_backed_previous_summary(existing_endpoints)
+            is not None
         ):
             return False
         tail: list[Msg] = []
@@ -1246,6 +1321,16 @@ class ScrollContextManager:
         self._summary_update_failed = False
         self._rebuild_context(agent, tail)
         return True
+
+    async def reconcile_loaded_context_async(self, agent: Any) -> bool:
+        previous = self._continuation_summary
+        if previous is None:
+            return False
+        existing = await self._read_history(
+            "existing_seqs",
+            set(previous.covered_seq),
+        )
+        return self.reconcile_loaded_context(agent, existing)
 
     async def _validated_summary_attempt(
         self,
@@ -1287,8 +1372,8 @@ class ScrollContextManager:
             for lo, hi in candidate.seq_spans()
             for endpoint in (lo, hi)
         }
-        existing_seqs = await asyncio.to_thread(
-            self._history.existing_seqs,
+        existing_seqs = await self._read_history(
+            "existing_seqs",
             endpoints,
         )
         issues = validate_summary_quality(
@@ -1338,8 +1423,8 @@ class ScrollContextManager:
         previous = self._continuation_summary
         if previous is not None:
             endpoints = set(previous.covered_seq)
-            existing = await asyncio.to_thread(
-                self._history.existing_seqs,
+            existing = await self._read_history(
+                "existing_seqs",
                 endpoints,
             )
             previous = self._source_backed_previous_summary(existing)
@@ -1364,8 +1449,7 @@ class ScrollContextManager:
             int(getattr(agent.model, "context_size", 0) or 0),
         )
         output_tokens = max(256, min(4000, context_size // 4))
-        durable_contents = await asyncio.to_thread(
-            self._durable_folded_result_contents,
+        durable_contents = await self._durable_folded_result_contents_async(
             middle,
         )
         summary_records = await asyncio.to_thread(
@@ -1702,10 +1786,25 @@ class ScrollContextManager:
 
     # -- write-through -------------------------------------------------------
 
-    def _persist_new(  # pylint: disable=too-many-branches
+    def _persist_new(self, agent: Any) -> None:
+        """Drive local writes synchronously for the legacy AgentScope hook."""
+        if self._async_history:
+            raise StorageError("Async history requires await flush(agent)")
+        operations = self._persist_operations(agent)
+        result = None
+        try:
+            while True:
+                try:
+                    result = operations.send(result)
+                except StopIteration:
+                    return
+        finally:
+            operations.close()
+
+    def _persist_operations(  # pylint: disable=too-many-branches
         self,
         agent: Any,
-    ) -> None:
+    ):
         """Write through live-context blocks not yet persisted.
 
         AgentScope 2.0 extends the last assistant Msg in place (one Msg per
@@ -1738,7 +1837,7 @@ class ScrollContextManager:
                     anon_pos += 1
                     if tcid in self._persisted_tcids:
                         continue
-                    seq = self._history.append(
+                    seq = yield self._history.append(
                         session_id=self._session_id,
                         agent_id=self._agent_id,
                         entry=entry,
@@ -1763,7 +1862,7 @@ class ScrollContextManager:
                             and not new_headline
                         ):
                             continue
-                        self._history.update_entry(
+                        yield self._history.update_entry(
                             prev_seq,
                             content=entry.content,
                             headline=entry.headline,
@@ -1781,7 +1880,7 @@ class ScrollContextManager:
                                 headline=entry.headline or "",
                             )
                         continue
-                    seq = self._history.append(
+                    seq = yield self._history.append(
                         session_id=self._session_id,
                         agent_id=self._agent_id,
                         entry=entry,
@@ -2163,6 +2262,8 @@ class ScrollContextManager:
         """Drop durable history older than ``retention_days`` (0 = keep
         forever). Returns the number of rows removed (or, with ``dry_run``,
         that would be removed — nothing is deleted)."""
+        if self._async_history:
+            raise StorageError("Async history requires purge_old_async")
         if retention_days <= 0:
             return 0
         return self._history.purge(
@@ -2178,4 +2279,33 @@ class ScrollContextManager:
         ).isoformat()
 
     def close(self) -> None:
+        if self._async_history:
+            raise StorageError("Async history must be closed with aclose")
         self._history.close()
+
+    async def aclose(self) -> None:
+        """Retire the handle using its backend's native execution model."""
+        if self._async_history:
+            async with self._persist_lock:
+                await self._history.close()
+        else:
+            await asyncio.to_thread(self.close)
+
+    async def purge_old_async(
+        self,
+        retention_days: int,
+        *,
+        dry_run: bool = False,
+    ) -> int:
+        if not self._async_history:
+            return await asyncio.to_thread(
+                self.purge_old,
+                retention_days,
+                dry_run=dry_run,
+            )
+        if retention_days <= 0:
+            return 0
+        return await self._history.purge(
+            before=self._cutoff(retention_days),
+            dry_run=dry_run,
+        )

@@ -17,6 +17,13 @@ been connected to them. In particular, selecting PostgreSQL does **not** move
 scroll history out of SQLite or make a multi-instance deployment safe. This is
 an integration under development, not a complete application storage switch.
 
+`ScrollContextManager` can now drive an async history handle without blocking
+AgentScope's synchronous save callback. It awaits writes during compression and
+before a normal session snapshot, advances sequence bookkeeping after successful
+writes, and supports async retention and close. The application builder still
+constructs the legacy history handle until MemorySpace and recall are connected;
+the new path is exercised directly against both SQL backends in tests.
+
 ## Configure a development deployment
 
 Merge the following into the root `config.json`:

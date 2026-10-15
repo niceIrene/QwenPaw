@@ -112,6 +112,20 @@ async def test_database_load_failure_cannot_become_an_empty_session():
         await SessionLoadHook().run(ctx)
 
 
+async def test_pending_history_failure_prevents_checkpoint_save():
+    from unittest.mock import AsyncMock
+
+    session = _FakeSession()
+    ctx = _ctx(session, ephemeral=False)
+    ctx.agent.prepare_session_state = AsyncMock(
+        side_effect=StorageError("history uncommitted"),
+    )
+    with pytest.raises(StorageError, match="history uncommitted"):
+        await SessionSaveHook().run(ctx)
+    assert session.saved is False
+    assert ctx.extras[SESSION_SAVE_SUCCEEDED_KEY] is False
+
+
 async def test_console_image_check_keeps_event_loop_responsive(monkeypatch):
     session = _FakeSession()
     session.load_payload = {"state": {"context": []}}

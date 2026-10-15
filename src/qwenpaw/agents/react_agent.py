@@ -314,6 +314,14 @@ class QwenPawAgent(CodingModeMixin, Agent):
 
     # Session persistence calls state_dict/load_state_dict on the agent;
     # these round-trip through self.state (AgentState pydantic model).
+    async def prepare_session_state(self) -> dict:
+        """Finish asynchronous history writes before checkpointing pointers."""
+        manager = getattr(self, "_context_manager", None)
+        flush = getattr(manager, "flush", None)
+        if callable(flush):
+            await flush(self)  # pylint: disable=not-callable
+        return self.state_dict()
+
     def state_dict(self) -> dict:
         """Serialize the agent's 2.0 ``AgentState`` to a JSON-safe dict."""
         state = getattr(self, "state", None)
@@ -411,7 +419,7 @@ class QwenPawAgent(CodingModeMixin, Agent):
             # compress_context() on the next reasoning cycle.
             pass
 
-    async def close(self) -> None:
+    async def close(self) -> None:  # pylint: disable=too-many-branches
         """Shut down governor, release the history store, and clean up expired
         tool-result files."""
         gov = getattr(self, "_governor", None)
@@ -429,10 +437,11 @@ class QwenPawAgent(CodingModeMixin, Agent):
             if hasattr(cm, "purge_old"):
                 try:
                     lcc = self._agent_config.running.light_context_config
-                    await run_sync_io(
-                        cm.purge_old,
-                        lcc.scroll_config.history_retention_days,
-                    )
+                    retention = lcc.scroll_config.history_retention_days
+                    if hasattr(cm, "purge_old_async"):
+                        await cm.purge_old_async(retention)
+                    else:
+                        await run_sync_io(cm.purge_old, retention)
                 except Exception:
                     logger.debug(
                         "history retention purge failed",
@@ -440,7 +449,10 @@ class QwenPawAgent(CodingModeMixin, Agent):
                     )
             if hasattr(cm, "close"):
                 try:
-                    await run_sync_io(cm.close)
+                    if hasattr(cm, "aclose"):
+                        await cm.aclose()
+                    else:
+                        await run_sync_io(cm.close)
                 except Exception:
                     logger.debug(
                         "context manager close failed",
