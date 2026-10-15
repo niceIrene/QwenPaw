@@ -23,6 +23,7 @@ from ...runtime.console_turn_state import (
 from ...runtime.hooks import HookContext, HookResult
 from ...runtime.phases import Phase
 from .signals import SESSION_SAVE_SUCCEEDED_KEY
+from ...storage.errors import StorageError
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,8 @@ class SessionLoadHook(LifecycleHook):
                     loaded_mode_state = dict(mode_state)
                     loaded_mode_state.update(ctx.mode_state)
                     ctx.mode_state = loaded_mode_state
+        except StorageError:
+            raise
         except KeyError as e:
             logger.debug(
                 "session_load: skipped (schema mismatch): %s",
@@ -123,6 +126,8 @@ class SessionSaveHook(LifecycleHook):
                 agent=proxy,
             )
             ctx.extras[SESSION_SAVE_SUCCEEDED_KEY] = True
+        except StorageError:
+            raise
         except Exception:
             logger.debug("session_save: failed", exc_info=True)
         return HookResult()

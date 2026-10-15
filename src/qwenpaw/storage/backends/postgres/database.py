@@ -87,9 +87,17 @@ class PostgresDatabase(Database):
         if self._pool is None:
             raise StorageError(f"Storage is not open")
         timeout = self.config.postgresql.acquire_timeout_seconds
-        async with self._pool.acquire(timeout=timeout) as connection:
-            async with connection.transaction():
-                yield PostgresTransaction(connection)
+        try:
+            async with self._pool.acquire(timeout=timeout) as connection:
+                async with connection.transaction():
+                    yield PostgresTransaction(connection)
+        except (
+            asyncpg.PostgresError,
+            asyncpg.InterfaceError,
+            OSError,
+            TimeoutError,
+        ) as exc:
+            raise StorageError("PostgreSQL transaction failed") from exc
 
     async def close(self) -> None:
         if self._pool is not None:
