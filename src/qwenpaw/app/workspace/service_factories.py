@@ -18,6 +18,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def create_session_service(
+    ws: "Workspace",
+    _service,
+    publish: Callable[[Any], None],
+):
+    """Select session persistence and publish ownership before opening SQL."""
+    from ...config.utils import load_config
+    from ...constant import WORKING_DIR
+    from ...storage.config import StorageBackend
+    from ...storage.models import StorageScope
+    from ..chats.database_session import DatabaseSession
+    from ..chats.session import SafeJSONSession
+
+    config = load_config().storage
+    if config.backend == StorageBackend.SQLITE:
+        service = SafeJSONSession(save_dir=str(ws.workspace_dir / "sessions"))
+        publish(service)
+        return service
+    service = DatabaseSession(
+        config,
+        WORKING_DIR,
+        StorageScope(config.deployment_id, ws.agent_id, ws.agent_id),
+    )
+    publish(service)
+    await service.start()
+    return service
+
+
 async def create_driver_service(
     ws: "Workspace",
     _service,
