@@ -18,6 +18,7 @@ from .models import StorageScope
 from .repositories.history import SqlHistoryStore
 from .repositories.leases import Leases
 from .repositories.records import Records
+from .repositories.sessions import SessionRepository
 from .schema import initialize, validate
 
 
@@ -64,6 +65,10 @@ class StorageRuntime:
         if not tenant_id:
             raise ValueError(f"Tenant ID must not be empty")
         return Records(self.database, tenant_id, self.epoch)
+
+    async def sessions(self, scope: StorageScope) -> SessionRepository:
+        """Bind sessions and their history to the same store identity."""
+        return SessionRepository(await self.history(scope))
 
     def leases(self) -> Leases:
         """Create lease operations for the current activation epoch."""
