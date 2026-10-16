@@ -11,17 +11,17 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from ..contracts.database import Database
-from ..errors import StorageIdentityError, MigrationConflictError
+from ..errors import StorageIdentityError, StorageConflictError
 from ..repositories.history import COLUMNS
 from ..repositories.records import encode
-from ..schema import fence_write, identity
+from ..schema import validate_write, identity
 
 
 def snapshot_history(source: Path, destination: Path) -> None:
     """Copy committed SQLite state, preserving the source and its sidecars."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
-        raise MigrationConflictError(f"Legacy snapshot already exists")
+        raise StorageConflictError(f"Legacy snapshot already exists")
     uri = f"{source.resolve().as_uri()}?mode=ro"
     with closing(sqlite3.connect(uri, uri=True, timeout=5)) as origin:
         # Reading must not instantiate HistoryStore, whose corruption
@@ -87,7 +87,7 @@ async def import_history(
     snapshot = backup_directory / f"{store_id}.db"
     await asyncio.to_thread(snapshot_history, source, snapshot)
     async with db.transaction(write=True) as tx:
-        await fence_write(db, tx, epoch)
+        await validate_write(db, tx, epoch)
         existing = await tx.one(
             f"SELECT store_id FROM {db.table('stores')} "
             f"WHERE tenant_id={db.bind(1)} AND workspace_id={db.bind(2)} "
@@ -97,7 +97,7 @@ async def import_history(
             agent_id,
         )
         if existing:
-            raise MigrationConflictError(f"Legacy target store already exists")
+            raise StorageConflictError(f"Legacy target store already exists")
         await tx.execute(
             f"INSERT INTO {db.table('stores')} VALUES ({db.binds(5)}, 1)",
             store_id,

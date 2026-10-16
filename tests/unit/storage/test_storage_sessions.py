@@ -4,7 +4,7 @@
 import pytest
 
 from qwenpaw.agents.context.types import LogEntry
-from qwenpaw.storage.errors import MigrationConflictError
+from qwenpaw.storage.errors import StorageConflictError
 from qwenpaw.storage.factory import create_storage
 from qwenpaw.storage.models import StorageScope
 from qwenpaw.storage.repositories.sessions import SessionKey
@@ -48,7 +48,7 @@ async def test_stale_session_save_rolls_back_pending_history(db):
         await writer.save(key, {"turn": 1}, revision=0)
         snapshot = await stale_writer.load(key)
         await writer.save(key, {"turn": 2}, revision=1)
-        with pytest.raises(MigrationConflictError):
+        with pytest.raises(StorageConflictError):
             await stale_writer.save(
                 key,
                 {"turn": "stale"},

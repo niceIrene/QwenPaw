@@ -14,7 +14,6 @@ import aiosqlite
 from ...config import StorageConfig
 from ...contracts.database import Database, Transaction, TABLES
 from ...errors import StorageError
-from .backup import backup_sqlite
 
 
 class SQLiteTransaction(Transaction):
@@ -59,9 +58,6 @@ class SQLiteDatabase(Database):
 
     def bind(self, index: int) -> str:
         return f"?"
-
-    def clock(self) -> str:
-        return f"((julianday('now') - 2440587.5) * 86400.0)"
 
     async def open(self, *, create: bool = False) -> None:
         if self._connection is not None:
@@ -132,21 +128,5 @@ class SQLiteDatabase(Database):
         )
         return {row[f"name"] for row in rows} & TABLES
 
-    async def table_columns(self, tx: Transaction, table: str) -> list[str]:
-        rows = await tx.fetch(f"PRAGMA table_info({self.table(table)})")
-        return [row[f"name"] for row in rows]
-
     async def create_namespace(self, tx: Transaction) -> None:
         """SQLite's namespace is the already opened database file."""
-
-    async def backup_native(
-        self,
-        *,
-        migration_id: str,
-        prior_identity: dict,
-    ) -> Path:
-        return await backup_sqlite(
-            self.config.sqlite.database_path(self.root),
-            migration_id=migration_id,
-            prior_identity=prior_identity,
-        )

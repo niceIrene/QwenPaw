@@ -11,8 +11,8 @@ class StorageIdentityError(StorageError):
 
 
 class StorageMaintenanceError(StorageError):
-    """Writes are fenced while the dataset is being migrated."""
+    """The stored dataset is inactive or a handle has stale identity."""
 
 
-class MigrationConflictError(StorageError):
-    """The target changed or replacement has not been confirmed."""
+class StorageConflictError(StorageError):
+    """A revision or unique identity conflicts with stored state."""

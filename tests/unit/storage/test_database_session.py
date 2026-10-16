@@ -12,7 +12,7 @@ from qwenpaw.app.chats.session import SafeJSONSession
 from qwenpaw.app.workspace.service_factories import create_session_service
 from qwenpaw.config.config import Config
 from qwenpaw.runtime._state_utils import StateProxy
-from qwenpaw.storage.errors import MigrationConflictError, StorageError
+from qwenpaw.storage.errors import StorageConflictError, StorageError
 from qwenpaw.storage.models import StorageScope
 
 
@@ -65,7 +65,7 @@ async def test_runtime_request_revisions_are_not_shared(db):
         await session.get_session_state_dict("chat")
         ready.set()
         await saved.wait()
-        with pytest.raises(MigrationConflictError):
+        with pytest.raises(StorageConflictError):
             await session.save_session_state("chat", agent=proxy)
 
     async def winning_request():

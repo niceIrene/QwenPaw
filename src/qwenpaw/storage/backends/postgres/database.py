@@ -55,9 +55,6 @@ class PostgresDatabase(Database):
     def bind(self, index: int) -> str:
         return f"${index}"
 
-    def clock(self) -> str:
-        return f"EXTRACT(EPOCH FROM clock_timestamp())"
-
     async def open(self, *, create: bool = False) -> None:
         if self._pool is not None:
             raise StorageError(f"Storage is already open")
@@ -128,26 +125,6 @@ class PostgresDatabase(Database):
             and row[f"name"][len(cfg.table_prefix) :] in TABLES
         }
 
-    async def table_columns(self, tx: Transaction, table: str) -> list[str]:
-        self.table(table)
-        cfg = self.config.postgresql
-        rows = await tx.fetch(
-            f"SELECT column_name AS name FROM information_schema.columns "
-            f"WHERE table_schema=$1 AND table_name=$2 "
-            f"ORDER BY ordinal_position",
-            cfg.schema_name,
-            f"{cfg.table_prefix}{table}",
-        )
-        return [row[f"name"] for row in rows]
-
     async def create_namespace(self, tx: Transaction) -> None:
         schema = self.config.postgresql.schema_name
         await tx.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-
-    async def backup_native(
-        self,
-        *,
-        migration_id: str,
-        prior_identity: dict,
-    ) -> None:
-        """The mandatory namespace snapshot is PostgreSQL's backup."""

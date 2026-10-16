@@ -7,12 +7,12 @@ import json
 from typing import Any
 
 from ..contracts.database import Database
-from ..errors import MigrationConflictError
-from ..schema import fence_write
+from ..errors import StorageConflictError
+from ..schema import validate_write
 
 
 def encode(value: Any) -> str:
-    """Serialize portable values deterministically for migration checks."""
+    """Serialize values deterministically for identity and conflict checks."""
     return json.dumps(
         value,
         ensure_ascii=False,
@@ -58,7 +58,7 @@ class Records:
         db = self.db
         payload = encode(value)
         async with db.transaction(write=True) as tx:
-            await fence_write(db, tx, self.epoch)
+            await validate_write(db, tx, self.epoch)
             if revision == 0:
                 row = await tx.one(
                     f"INSERT INTO {db.table('records')} "
@@ -83,7 +83,7 @@ class Records:
                     revision,
                 )
             if row is None:
-                raise MigrationConflictError(f"Record revision changed")
+                raise StorageConflictError(f"Record revision changed")
         return row[f"revision"]
 
     async def record_usage(self, event_id: str, payload: dict) -> bool:
@@ -91,7 +91,7 @@ class Records:
         db = self.db
         encoded = encode(payload)
         async with db.transaction(write=True) as tx:
-            await fence_write(db, tx, self.epoch)
+            await validate_write(db, tx, self.epoch)
             row = await tx.one(
                 f"INSERT INTO {db.table('usage')} VALUES ({db.binds(3)}) "
                 f"ON CONFLICT (tenant_id, event_id) DO NOTHING "
@@ -109,7 +109,7 @@ class Records:
                 )
                 assert existing is not None
                 if existing[f"payload"] != encoded:
-                    raise MigrationConflictError(
+                    raise StorageConflictError(
                         f"Usage event identity reused",
                     )
         return row is not None

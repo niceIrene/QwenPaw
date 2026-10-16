@@ -11,8 +11,7 @@ from ..config.utils import load_config
 from ..constant import WORKING_DIR
 from ..storage.errors import StorageError
 from ..storage.factory import create_database
-from ..storage.migration.service import inspect
-from ..storage.schema import initialize
+from ..storage.schema import initialize, inspect_storage
 
 
 @click.group("storage")
@@ -38,7 +37,10 @@ async def _inspect_storage(config, root, *, create: bool) -> dict:
         await database.open(create=create)
         if create:
             await initialize(database)
-        return {"backend": config.backend.value, **await inspect(database)}
+        return {
+            "backend": config.backend.value,
+            **await inspect_storage(database),
+        }
     finally:
         await database.close()
 
