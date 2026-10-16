@@ -40,11 +40,12 @@ class _SnapshotWriter:
                 [tuple(row[column] for column in columns) for row in rows],
             )
 
-    def finish(self) -> None:
+    def finish(self, *, search_index: bool) -> None:
         try:
-            with self._conn:
-                create_history_fts(self._conn)
-                rebuild_history_fts(self._conn)
+            if search_index:
+                with self._conn:
+                    create_history_fts(self._conn)
+                    rebuild_history_fts(self._conn)
         except sqlite3.OperationalError as exc:
             if "no such module: fts5" not in str(exc).lower():
                 raise
@@ -55,6 +56,9 @@ class _SnapshotWriter:
 async def refresh_history_snapshot(
     history: SqlHistoryStore,
     destination: Path,
+    *,
+    search_index: bool = True,
+    **selection,
 ) -> None:
     """Publish only a complete snapshot; callers serialize readers/refreshes.
 
@@ -70,10 +74,10 @@ async def refresh_history_snapshot(
     try:
         path = Path(temporary.name) / "history.db"
         writer = await run_sync_io(_SnapshotWriter, path)
-        async with aclosing(history.snapshot_pages()) as pages:
+        async with aclosing(history.snapshot_pages(**selection)) as pages:
             async for rows in pages:
                 await run_sync_io(writer.insert_page, rows)
-        await run_sync_io(writer.finish)
+        await run_sync_io(writer.finish, search_index=search_index)
         await run_sync_io(path.replace, destination)
     finally:
         if writer is not None:

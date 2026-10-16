@@ -265,6 +265,13 @@ class SqlHistoryStore(HistoryStore):
         self,
         *,
         page_size: int = 1000,
+        after: int = 0,
+        through: int | None = None,
+        session_id: str | None = None,
+        tool_call_id: str | None = None,
+        agent_id: str | None = None,
+        include_unassigned_agent: bool = False,
+        limit: int | None = None,
     ) -> AsyncGenerator[list[dict], None]:
         """Export one store from a consistent read view, in bounded pages.
 
@@ -274,7 +281,27 @@ class SqlHistoryStore(HistoryStore):
         self._check_open()
         if not 1 <= page_size <= 10000:
             raise ValueError("History page limit must be between 1 and 10000")
+        if limit is not None and limit < 1:
+            raise ValueError("Snapshot row limit must be positive")
         db = self.db
+        filters = []
+        values = []
+        for column, operator, value in (
+            ("seq", "<=", through),
+            ("session_id", "=", session_id),
+            ("tool_call_id", "=", tool_call_id),
+        ):
+            if value is not None:
+                values.append(value)
+                filters.append(f"{column}{operator}{db.bind(len(values) + 2)}")
+        if agent_id is not None:
+            values.append(agent_id)
+            clause = f"agent_id={db.bind(len(values) + 2)}"
+            if include_unassigned_agent:
+                clause = f"({clause} OR agent_id IS NULL)"
+            filters.append(clause)
+        where = "".join(f" AND {clause}" for clause in filters)
+        remaining = limit
         async with db.transaction(snapshot=True) as tx:
             meta = await identity(db, tx)
             store = await tx.one(
@@ -290,20 +317,26 @@ class SqlHistoryStore(HistoryStore):
                 or store["generation"] != self.store["generation"]
             ):
                 raise StorageIdentityError("History snapshot identity changed")
-            after = 0
-            while True:
+            while remaining is None or remaining > 0:
                 rows = await tx.fetch(
                     f"SELECT * FROM {db.table('history')} "
-                    f"WHERE store_id={db.bind(1)} AND seq>{db.bind(2)} "
-                    f"ORDER BY seq LIMIT {db.bind(3)}",
+                    f"WHERE store_id={db.bind(1)} AND seq>{db.bind(2)}{where} "
+                    f"ORDER BY seq LIMIT {db.bind(len(values) + 3)}",
                     self.store_id,
                     after,
-                    page_size,
+                    *values,
+                    (
+                        min(page_size, remaining)
+                        if remaining is not None
+                        else page_size
+                    ),
                 )
                 if not rows:
                     break
                 yield rows
                 after = rows[-1]["seq"]
+                if remaining is not None:
+                    remaining -= len(rows)
 
     async def _select_seqs(self, seqs: set[int]) -> list[dict]:
         self._check_open()
