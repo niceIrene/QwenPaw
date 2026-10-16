@@ -82,3 +82,18 @@ async def test_scroll_schema_migration_does_not_block_startup_loop(
         assert "ch_created_at" in indexes
     finally:
         migrated.close()
+
+
+@pytest.mark.asyncio
+async def test_postgres_startup_does_not_import_legacy_history(monkeypatch):
+    from qwenpaw.config.config import Config
+    from unittest.mock import Mock
+
+    monkeypatch.setattr("qwenpaw.envs.load_envs_into_environ", lambda: None)
+    app_module = importlib.import_module("qwenpaw.app._app")
+    config = Config(storage={"backend": "postgresql"})
+    monkeypatch.setattr("qwenpaw.config.load_config", lambda: config)
+    legacy_sync = Mock()
+    monkeypatch.setattr(scroll_sync, "sync_all_scroll_agents", legacy_sync)
+    await app_module._sync_scroll_history_on_startup()
+    legacy_sync.assert_not_called()
