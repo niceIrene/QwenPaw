@@ -368,23 +368,23 @@ class ScrollContextManager:
                 active = self._active_turn_tail(agent)
                 turn_id = getattr(active[0], "id", None) if active else None
                 self._recall_loop_guard.begin_turn(turn_id)
-            operations = self._persist_operations(agent)
-            result = None
             try:
-                while True:
-                    try:
-                        operation = operations.send(result)
-                    except StopIteration:
-                        return True
-                    result = await operation
+                for mid, tcid, entry, previous in self._pending_history(agent):
+                    result = await self._write_history(
+                        mid,
+                        tcid,
+                        entry,
+                        previous,
+                    )
+                    seq = previous if previous is not None else result
+                    self._record_history_write(mid, tcid, entry, seq)
+                return True
             except StorageError as exc:
                 self._history.note_write_failure(exc)
                 logger.exception(
                     "ScrollContextManager async persistence failed",
                 )
                 return False
-            finally:
-                operations.close()
 
     async def flush(self, agent: Any) -> None:
         """Await pending remote history before taking a session snapshot."""
@@ -921,7 +921,7 @@ class ScrollContextManager:
         middle: list[Msg],
         *,
         max_chars: int,
-        durable_contents: (dict[tuple[str, int], str | None] | None) = None,
+        durable_contents: dict[tuple[str, int], str | None] | None = None,
     ) -> str:
         """Render role-aware bounded evidence for the summary model.
 
@@ -1104,9 +1104,11 @@ class ScrollContextManager:
             if btype == "text":
                 parts.append(
                     str(
-                        block.get("text", "")
-                        if isinstance(block, dict)
-                        else getattr(block, "text", "") or "",
+                        (
+                            block.get("text", "")
+                            if isinstance(block, dict)
+                            else getattr(block, "text", "") or ""
+                        ),
                     ),
                 )
         return "".join(parts).strip()
@@ -1539,12 +1541,14 @@ class ScrollContextManager:
                 "scroll: continuation summary update failed; "
                 "preserving the previous valid summary",
                 exc_info=(
-                    type(failure),
-                    failure,
-                    failure.__traceback__,
-                )
-                if failure is not None
-                else None,
+                    (
+                        type(failure),
+                        failure,
+                        failure.__traceback__,
+                    )
+                    if failure is not None
+                    else None
+                ),
             )
             return
         self._continuation_summary = updated
@@ -1871,29 +1875,17 @@ class ScrollContextManager:
         """Drive local writes synchronously for the legacy AgentScope hook."""
         if self._async_history:
             raise StorageError("Async history requires await flush(agent)")
-        operations = self._persist_operations(agent)
-        result = None
-        try:
-            while True:
-                try:
-                    result = operations.send(result)
-                except StopIteration:
-                    return
-        finally:
-            operations.close()
+        for mid, tcid, entry, previous in self._pending_history(agent):
+            result = self._write_history(mid, tcid, entry, previous)
+            seq = previous if previous is not None else result
+            self._record_history_write(mid, tcid, entry, seq)
 
-    def _persist_operations(  # pylint: disable=too-many-branches
-        self,
-        agent: Any,
-    ):
-        """Write through live-context blocks not yet persisted.
+    def _pending_history(self, agent: Any):
+        """Yield pending entries without performing I/O or advancing state.
 
-        AgentScope 2.0 extends the last assistant Msg in place (one Msg per
-        reply accumulates ``[text, tool_call, tool_result, ...]``). So each
-        tool_result is written once per ``tool_call_id``; the msg's single
-        non-result row is written once, then refreshed in place as the Msg
-        grows — so every cell's tool-call blocks and any later ``⟦…⟧`` headline
-        persist. Synthetic placeholders are never persisted.
+        Streaming replies extend a Msg in place. Refresh its model-turn row
+        when blocks or a headline arrive; deduplicate results by tool call ID.
+        Iterate lazily so each successful write affects the next decision.
         """
         # pylint: disable=import-outside-toplevel
         from ...memory.base_memory_manager import BaseMemoryManager
@@ -1918,68 +1910,57 @@ class ScrollContextManager:
                     anon_pos += 1
                     if tcid in self._persisted_tcids:
                         continue
-                    seq = yield self._history.append(
-                        session_id=self._session_id,
-                        agent_id=self._agent_id,
-                        entry=entry,
-                        dedup_key=tcid,
-                    )
-                    self._persisted_tcids.add(tcid)
-                    self._seq_by_tcid[tcid] = seq
-                else:
-                    nblk = len(entry.blocks or ())
-                    if mid in self._persisted_ids:
-                        # Msg extended in place — refresh the row when it grew
-                        # (more tool calls) or a headline appeared later.
-                        prev_seq = self._model_turn_seq.get(mid)
-                        if prev_seq is None:
-                            continue
-                        new_headline = (
-                            bool(entry.headline)
-                            and mid not in self._leaf_by_id
-                        )
-                        if (
-                            nblk <= self._model_turn_nblk.get(mid, 0)
-                            and not new_headline
-                        ):
-                            continue
-                        yield self._history.update_entry(
-                            prev_seq,
-                            content=entry.content,
-                            headline=entry.headline,
-                            blocks=entry.blocks,
-                            tool_call_id=entry.tool_call_id,
-                            name=entry.name,
-                            tool_state=entry.tool_state,
-                            tool_input=entry.tool_input,
-                            metadata=entry.metadata,
-                        )
-                        self._model_turn_nblk[mid] = nblk
-                        if new_headline:
-                            self._leaf_by_id[mid] = Leaf(
-                                seq=prev_seq,
-                                headline=entry.headline or "",
-                            )
-                        continue
-                    seq = yield self._history.append(
-                        session_id=self._session_id,
-                        agent_id=self._agent_id,
-                        entry=entry,
-                        dedup_key=mid,
-                    )
-                    self._persisted_ids.add(mid)
-                    self._model_turn_seq[mid] = seq
-                    self._model_turn_nblk[mid] = nblk
-                    # A model turn with a headline becomes an index leaf.
-                    if entry.headline:
-                        self._leaf_by_id[mid] = Leaf(
-                            seq=seq,
-                            headline=entry.headline,
-                        )
-                # Track the msg's seq span (it grows as results are appended)
-                # so eviction recovers the whole turn by range.
-                lo, hi = self._seq_by_id.get(mid, (seq, seq))
-                self._seq_by_id[mid] = (min(lo, seq), max(hi, seq))
+                    yield mid, tcid, entry, None
+                    continue
+                if mid not in self._persisted_ids:
+                    yield mid, None, entry, None
+                    continue
+                previous = self._model_turn_seq.get(mid)
+                if previous is None:
+                    continue
+                new_headline = (
+                    bool(entry.headline) and mid not in self._leaf_by_id
+                )
+                if (
+                    len(entry.blocks or ()) > self._model_turn_nblk.get(mid, 0)
+                    or new_headline
+                ):
+                    yield mid, None, entry, previous
+
+    def _write_history(self, mid, tcid, entry, previous):
+        """Execute one local write or return the remote driver's awaitable."""
+        if previous is None:
+            return self._history.append(
+                session_id=self._session_id,
+                agent_id=self._agent_id,
+                entry=entry,
+                dedup_key=tcid if tcid is not None else mid,
+            )
+        return self._history.update_entry(
+            previous,
+            content=entry.content,
+            headline=entry.headline,
+            blocks=entry.blocks,
+            tool_call_id=entry.tool_call_id,
+            name=entry.name,
+            tool_state=entry.tool_state,
+            tool_input=entry.tool_input,
+            metadata=entry.metadata,
+        )
+
+    def _record_history_write(self, mid, tcid, entry, seq: int) -> None:
+        """Advance bookkeeping only after the corresponding write succeeds."""
+        if tcid is not None:
+            self._persisted_tcids.add(tcid)
+            self._seq_by_tcid[tcid] = seq
+        else:
+            self._persisted_ids.add(mid)
+            self._model_turn_seq[mid] = seq
+            self._model_turn_nblk[mid] = len(entry.blocks or ())
+            if entry.headline:
+                self._leaf_by_id[mid] = Leaf(seq=seq, headline=entry.headline)
+        lo, hi = self._seq_by_id.get(mid, (seq, seq))
+        self._seq_by_id[mid] = (min(lo, seq), max(hi, seq))
 
     # -- eviction ------------------------------------------------------------
 
