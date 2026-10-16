@@ -2,27 +2,34 @@
 """Disposable SQLite query views of authoritative SQL history."""
 
 from contextlib import aclosing
-import os
+import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ....utils.io_utils import run_sync_io
 from ...repositories.history import COLUMNS, SqlHistoryStore
-from .legacy_history import SQLiteHistoryStore
+from .history_schema import (
+    create_history_tables,
+    create_history_fts,
+    rebuild_history_fts,
+)
 
 
-class _SnapshotWriter(SQLiteHistoryStore):
-    """Preserve source sequences and rebuild the derived search index."""
+class _SnapshotWriter:
+    """Build a new disposable query database without legacy recovery state."""
+
+    def __init__(self, path: Path) -> None:
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        try:
+            with self._conn:
+                create_history_tables(self._conn)
+        except BaseException:
+            self.close()
+            raise
 
     def close(self) -> None:
-        super().close()
-        # Each refresh has a unique path; retaining its integrity cache entry
-        # would grow process memory even after the temporary file is removed.
-        with self._integrity_probe_condition:
-            self._integrity_probe_checked.pop(
-                (os.getpid(), self._path.resolve()),
-                None,
-            )
+        self._conn.close()
 
     def insert_page(self, rows: list[dict]) -> None:
         columns = ("seq", *COLUMNS)
@@ -34,10 +41,15 @@ class _SnapshotWriter(SQLiteHistoryStore):
             )
 
     def finish(self) -> None:
-        if self._fts:
+        try:
             with self._conn:
-                self._rebuild_fts()
-        self.close()
+                create_history_fts(self._conn)
+                rebuild_history_fts(self._conn)
+        except sqlite3.OperationalError as exc:
+            if "no such module: fts5" not in str(exc).lower():
+                raise
+        finally:
+            self.close()
 
 
 async def refresh_history_snapshot(
