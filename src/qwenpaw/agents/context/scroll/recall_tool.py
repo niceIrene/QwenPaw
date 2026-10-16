@@ -28,6 +28,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
 from typing import Any, Optional
 
 from agentscope.message import TextBlock, ToolResultState
@@ -792,13 +793,25 @@ def _run_search(
     return rows, label
 
 
-def make_recall_history(
+def _open_memoryspace(history_db_path, session_id, agent_id):
+    """Keep MemorySpace imports lazy, including calendar-only calls."""
+    from .memoryspace import MemorySpace
+
+    return MemorySpace(
+        history_db_path=history_db_path,
+        session_id=session_id,
+        agent_id=agent_id,
+    )
+
+
+def make_recall_history(  # pylint: disable=too-many-statements
     *,
     history_db_path: str,
     session_id: str | None,
     agent_id: str | None = None,
     loop_guard: RecallLoopGuard | None = None,
     page_max_bytes: int = DEFAULT_MAX_BYTES,
+    prepare_read: Callable[[str, dict], Awaitable[None]] | None = None,
 ):
     """Build a ``recall_history`` tool bound to one session's history.
 
@@ -807,18 +820,6 @@ def make_recall_history(
     :class:`MemorySpace` per call keeps the read-only ATTACH + authorizer
     setup identical to the REPL's and leaks no connection across calls.
     """
-
-    def _open_ms() -> Any:
-        # Imported lazily (not at module top) for symmetry with the sandboxed
-        # cell, which imports memoryspace by bare name — and so a broken
-        # memoryspace degrades this tool, not the whole scroll import chain.
-        from .memoryspace import MemorySpace
-
-        return MemorySpace(
-            history_db_path=history_db_path,
-            session_id=session_id,
-            agent_id=agent_id,
-        )
 
     def _run(  # pylint: disable=too-many-return-statements
         op: str,
@@ -848,7 +849,17 @@ def make_recall_history(
                 False,
                 {},
             )
-        ms = _open_ms()
+        # Validation and calendar arithmetic need no history database.
+        include_history = (
+            op == "search"
+            or (op == "expand" and lo is not None and hi is not None)
+            or (op == "recall_tool" and bool((tool_call_id or "").strip()))
+        )
+        ms = _open_memoryspace(
+            history_db_path if include_history else None,
+            session_id,
+            agent_id,
+        )
         try:
             if op == "expand":
                 if lo is None or hi is None:
@@ -983,6 +994,10 @@ def make_recall_history(
                 )
         block_target = False
         try:
+            # Preparation happens after validation and loop rejection. Backend
+            # failures propagate; never execute against an older query view.
+            if prepare_read is not None:
+                await prepare_read(op, payload)
             try:
                 text, ok, page = await run_sync_io(
                     _run,

@@ -15,6 +15,7 @@ from ....storage.errors import StorageError
 from ....utils.io_utils import run_sync_io
 from .. import ScrollComponents, scroll_unsandboxed_allowed
 from .manager import ScrollContextManager
+from .memoryspace import DEFAULT_ROW_CAP
 from .recall_tool import RecallLoopGuard, make_recall_history
 from .repl import make_recall_history_python
 
@@ -29,18 +30,53 @@ class DatabaseScrollManager(ScrollContextManager):
         self.recall_lock = asyncio.Lock()
         self.recall_closed = False
 
-    def wrap_recall(self, tool):
-        """Refresh before invocation, retaining tool governance metadata."""
+    async def prepare_recall(self, op: str, arguments: dict) -> None:
+        """Export only the records a structured operation can actually read."""
+        selection = {}
+        if op == "expand":
+            lo, hi = arguments.get("lo"), arguments.get("hi")
+            if lo is None or hi is None:
+                return
+            selection = {
+                "after": lo - 1,
+                "through": hi,
+                "session_id": self._session_id,
+                "agent_id": self._agent_id,
+                "include_unassigned_agent": True,
+                # The extra row preserves MemorySpace's truncation sentinel.
+                "limit": DEFAULT_ROW_CAP + 1,
+            }
+        elif op == "recall_tool":
+            tool_id = arguments.get("tool_call_id")
+            if not (tool_id or "").strip():
+                return
+            selection = {
+                "tool_call_id": tool_id,
+                "agent_id": self._agent_id,
+                "limit": DEFAULT_ROW_CAP + 1,
+            }
+        elif op != "search":
+            return
+        await refresh_history_snapshot(
+            self._history,
+            self.snapshot_path,
+            search_index=op == "search",
+            **selection,
+        )
+
+    def wrap_recall(self, tool, *, full_snapshot: bool = True):
+        """Serialize recall, with a full snapshot only for the REPL."""
 
         @wraps(tool)
         async def recall(*args, **kwargs):
             async with self.recall_lock:
                 if self.recall_closed:
                     raise StorageError("Recall history is closed")
-                await refresh_history_snapshot(
-                    self._history,
-                    self.snapshot_path,
-                )
+                if full_snapshot:
+                    await refresh_history_snapshot(
+                        self._history,
+                        self.snapshot_path,
+                    )
                 sandbox = kwargs.get("sandbox_config")
                 if sandbox is not None:
                     kwargs["sandbox_config"] = replace(
@@ -106,6 +142,7 @@ async def build_database_scroll_components(
             session_id=session_id,
             agent_id=session.scope.agent_id,
             loop_guard=guard,
+            prepare_read=manager.prepare_recall,
             page_max_bytes=(
                 lcc.tool_result_pruning_config.pruning_recent_msg_max_bytes
             ),
@@ -121,7 +158,7 @@ async def build_database_scroll_components(
         return ScrollComponents(
             manager,
             manager.wrap_recall(repl),
-            manager.wrap_recall(recall),
+            manager.wrap_recall(recall, full_snapshot=False),
         )
     except BaseException:
         await history.close()
