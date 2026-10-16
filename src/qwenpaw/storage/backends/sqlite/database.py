@@ -97,7 +97,10 @@ class SQLiteDatabase(Database):
         self,
         *,
         write: bool = False,
+        snapshot: bool = False,
     ) -> AsyncIterator[Transaction]:
+        if write and snapshot:
+            raise ValueError("A snapshot transaction cannot be writable")
         async with self._lock:
             if self._connection is None:
                 raise StorageError(f"Storage is not open")

@@ -92,8 +92,13 @@ class Database(ABC):
         self,
         *,
         write: bool = False,
+        snapshot: bool = False,
     ) -> AbstractAsyncContextManager[Transaction]:
-        """Commit success or roll back failure and cancellation."""
+        """Commit success or roll back failure and cancellation.
+
+        snapshot requests a consistent read view across all statements.
+        It cannot be combined with write.
+        """
 
     @abstractmethod
     async def existing_tables(self, tx: Transaction) -> set[str]:
