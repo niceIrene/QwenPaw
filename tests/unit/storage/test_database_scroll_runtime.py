@@ -9,6 +9,7 @@ import pytest
 from agentscope.message import Msg, TextBlock
 
 from qwenpaw.app.chats.database_session import DatabaseSession
+from qwenpaw.agents.command_handler import CommandHandler
 from qwenpaw.config.config import LightContextConfig
 from qwenpaw.runtime.builder import AgentBuilder
 from qwenpaw.storage.errors import StorageError
@@ -93,6 +94,28 @@ async def test_builder_uses_database_history_and_fresh_recall(
         assert (
             await session.repository.history.count(rows[0]["session_id"]) == 1
         )
+        # Standalone /compact must use the normal turn's store and key.
+        command = CommandHandler(
+            "agent",
+            state=agent.state,
+            agent_id="agent",
+            workspace_dir=str(tmp_path),
+            session_id="chat",
+            prompt_context=ctx,
+        )
+        compact_manager = await command._build_standalone_scroll_manager(
+            config,
+        )
+        try:
+            compact_manager.load_state(manager.to_dict())
+            await compact_manager.flush(agent)
+            assert (
+                await session.repository.history.count(rows[0]["session_id"])
+                == 1
+            )
+            assert not (tmp_path / "history.db").exists()
+        finally:
+            await compact_manager.aclose()
     finally:
         if scroll is not None:
             await scroll.context_manager.aclose()
