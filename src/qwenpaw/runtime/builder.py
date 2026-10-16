@@ -494,6 +494,7 @@ class AgentBuilder:
                 "allow_unsandboxed is off) — falling back to native context "
                 "management so evicted history stays accessible",
             )
+            await scroll.context_manager.aclose()
             scroll = None
         if scroll is not None:
             self._append_scroll_recall_tools(
@@ -1095,6 +1096,28 @@ class AgentBuilder:
         )
 
         from ..agents.context import build_scroll_components
+        from ..app.chats.database_session import DatabaseSession
+        from ..storage.repositories.sessions import SessionKey
+
+        session = getattr(workspace, "session", None)
+        if isinstance(session, DatabaseSession):
+            from ..agents.context.scroll.database_runtime import (
+                build_database_scroll_components,
+            )
+
+            request = getattr(ctx, "request", None)
+            key = SessionKey(
+                session_id,
+                getattr(request, "user_id", "") or session_id,
+                getattr(request, "channel", "") or "",
+            )
+            return await build_database_scroll_components(
+                session=session,
+                agent_config=agent_config,
+                workspace_dir=workspace_dir,
+                session_id=key.encode(),
+                offloader=offloader,
+            )
 
         # history.db is shared across sessions in this workspace; rows are
         # keyed by session_id (the conversation) and agent_id (which agent

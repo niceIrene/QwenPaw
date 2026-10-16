@@ -11,18 +11,25 @@ remember a request-local revision; a concurrent stale save fails instead of
 overwriting newer state. Database errors propagate from session hooks instead of
 being treated as a missing session or a successful save.
 
-The async history, lease and migration repositories are available, but scroll,
-MemorySpace/REPL, chat metadata, Hub, audit, providers and token usage have not yet
-been connected to them. In particular, selecting PostgreSQL does **not** move
-scroll history out of SQLite or make a multi-instance deployment safe. This is
-an integration under development, not a complete application storage switch.
+Selecting PostgreSQL now also routes scroll history through the workspace SQL
+runtime. History commits before sequence bookkeeping and normal session
+checkpoints. Recall reads a fresh, consistent PG snapshot through a temporary
+SQLite query database, preserving MemorySpace SQL and FTS5 behavior. Snapshots
+retain source sequence numbers, are scoped to the workspace's agent store, and
+are removed when the request's context manager closes. A refresh failure raises
+instead of returning stale data. The REPL receives only a read-only sandbox mount
+for this history snapshot; its existing sandbox requirement remains in force.
 
-`ScrollContextManager` can now drive an async history handle without blocking
-AgentScope's synchronous save callback. It awaits writes during compression and
-before a normal session snapshot, advances sequence bookkeeping after successful
-writes, and supports async retention and close. The application builder still
-constructs the legacy history handle until MemorySpace and recall are connected;
-the new path is exercised directly against both SQL backends in tests.
+Snapshots copy the complete agent store in bounded pages on each recall call.
+This preserves compatibility but costs local disk and transfer time proportional
+to history size. REPL scratch tables remain in the workspace's local `.scroll`
+directory; they are not yet stored in PG. Legacy JSON-to-SQLite history import is
+skipped on PG startup; switching backends does not implicitly import old data.
+
+Chat metadata, Hub, audit, providers and token usage have not yet been connected
+to SQL repositories. Leases and migration primitives exist, but application
+migration/activation and multi-instance coordination are not connected. This is
+an integration under development, not a complete application storage switch.
 
 ## Configure a development deployment
 
