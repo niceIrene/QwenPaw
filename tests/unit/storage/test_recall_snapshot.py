@@ -11,6 +11,7 @@ from qwenpaw.storage.backends.sqlite.recall_snapshot import (
     refresh_history_snapshot,
 )
 from qwenpaw.storage.errors import StorageIdentityError
+from qwenpaw.storage.backends.sqlite.legacy_history import SQLiteHistoryStore
 from qwenpaw.storage.repositories.history import SqlHistoryStore
 
 
@@ -69,6 +70,12 @@ async def test_snapshot_preserves_sequences_scope_search_and_refresh(
     with pytest.raises(StorageIdentityError):
         await refresh_history_snapshot(history, path)
     assert not list(tmp_path.glob(".snapshot-*"))
+    # Disposable snapshot paths must not accumulate in the integrity cache.
+    assert not any(
+        path.is_relative_to(tmp_path)
+        # pylint: disable-next=protected-access
+        for _, path in SQLiteHistoryStore._integrity_probe_checked
+    )
 
 
 @pytest.mark.asyncio
