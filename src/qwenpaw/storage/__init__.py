@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-"""Asynchronous application storage and explicit backend migration."""
+"""Asynchronous SQLite and PostgreSQL application storage."""

@@ -77,7 +77,7 @@ class StorageBackend(StrEnum):
 
 
 class StorageConfig(BaseModel):
-    """Select a backend; activation is separate from editing settings."""
+    """Select a backend; changing settings does not migrate existing data."""
 
     model_config = ConfigDict(extra=f"forbid")
     backend: StorageBackend = StorageBackend.SQLITE

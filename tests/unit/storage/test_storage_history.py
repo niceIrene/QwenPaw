@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from qwenpaw.agents.context.types import LogEntry
-from qwenpaw.storage.errors import MigrationConflictError, StorageIdentityError
+from qwenpaw.storage.errors import StorageConflictError, StorageIdentityError
 from qwenpaw.storage.repositories.history import SqlHistoryStore
 
 
@@ -81,7 +81,7 @@ async def test_checkpoint_conflict_rolls_back_accompanying_history(db):
         )
         == 1
     )
-    with pytest.raises(MigrationConflictError):
+    with pytest.raises(StorageConflictError):
         await history.save_checkpoint(
             f"session",
             {},

@@ -15,10 +15,10 @@ from ..contracts.database import Database, Transaction
 from ..errors import (
     StorageError,
     StorageIdentityError,
-    MigrationConflictError,
+    StorageConflictError,
 )
 from ..repositories.records import encode
-from ..schema import fence_write, identity
+from ..schema import validate_write, identity
 
 COLUMNS = (
     f"session_id",
@@ -79,7 +79,7 @@ class SqlHistoryStore(HistoryStore):
             store = await tx.one(select, *args)
         if store is None:
             async with db.transaction(write=True) as tx:
-                await fence_write(db, tx, epoch)
+                await validate_write(db, tx, epoch)
                 await tx.execute(
                     f"INSERT INTO {db.table('stores')} VALUES "
                     f"({db.binds(5)}, 1) "
@@ -119,6 +119,16 @@ class SqlHistoryStore(HistoryStore):
     ) -> tuple[int, bool]:
         self._check_open()
         db = self.db
+        # Allocate under the store's row lock before checking deduplication.
+        # Independent stores can write concurrently; retries can leave gaps
+        # but always return the original event sequence.
+        sequence = await tx.one(
+            f"UPDATE {db.table('stores')} SET next_seq=next_seq+1 "
+            f"WHERE store_id={db.bind(1)} RETURNING next_seq",
+            self.store_id,
+        )
+        assert sequence is not None
+        seq = sequence[f"next_seq"] - 1
         if dedup_key is not None:
             existing = await tx.one(
                 f"SELECT seq FROM {db.table('history')} "
@@ -130,13 +140,6 @@ class SqlHistoryStore(HistoryStore):
             )
             if existing:
                 return existing[f"seq"], False
-        sequence = await tx.one(
-            f"UPDATE {db.table('stores')} SET next_seq=next_seq+1 "
-            f"WHERE store_id={db.bind(1)} RETURNING next_seq",
-            self.store_id,
-        )
-        assert sequence is not None
-        seq = sequence[f"next_seq"] - 1
         values = self._values(
             session_id,
             self.store[f"agent_id"],
@@ -166,7 +169,7 @@ class SqlHistoryStore(HistoryStore):
         if agent_id not in (None, self.store[f"agent_id"]):
             raise StorageIdentityError(f"History belongs to another agent")
         async with self.db.transaction(write=True) as tx:
-            await fence_write(self.db, tx, self.epoch)
+            await validate_write(self.db, tx, self.epoch)
             seq, _ = await self._append(tx, session_id, entry, dedup_key)
         return seq
 
@@ -183,7 +186,7 @@ class SqlHistoryStore(HistoryStore):
             raise StorageIdentityError(f"History belongs to another agent")
         inserted = 0
         async with self.db.transaction(write=True) as tx:
-            await fence_write(self.db, tx, self.epoch)
+            await validate_write(self.db, tx, self.epoch)
             for entry, key in entries:
                 _, added = await self._append(tx, session_id, entry, key)
                 inserted += added
@@ -218,7 +221,7 @@ class SqlHistoryStore(HistoryStore):
             f"{key}={db.bind(index)}" for index, key in enumerate(columns, 1)
         )
         async with db.transaction(write=True) as tx:
-            await fence_write(db, tx, self.epoch)
+            await validate_write(db, tx, self.epoch)
             row = await tx.one(
                 f"UPDATE {db.table('history')} SET {assignments} "
                 f"WHERE store_id={db.bind(len(values) + 1)} "
@@ -360,7 +363,7 @@ class SqlHistoryStore(HistoryStore):
         db = self.db
         encoded = encode(payload)
         async with db.transaction(write=True) as tx:
-            await fence_write(db, tx, self.epoch)
+            await validate_write(db, tx, self.epoch)
             for entry, key in entries:
                 await self._append(tx, session_id, entry, key)
             if revision == 0:
@@ -388,7 +391,7 @@ class SqlHistoryStore(HistoryStore):
                     self.store[f"generation"],
                 )
             if row is None:
-                raise MigrationConflictError(f"Checkpoint revision changed")
+                raise StorageConflictError(f"Checkpoint revision changed")
         return row[f"revision"]
 
     async def load_checkpoint(
@@ -469,7 +472,7 @@ class SqlHistoryStore(HistoryStore):
             ]
         where, params = self._purge_filter(before, kinds)
         async with self.db.transaction(write=True) as tx:
-            await fence_write(self.db, tx, self.epoch)
+            await validate_write(self.db, tx, self.epoch)
             row = await tx.one(
                 f"SELECT COUNT(*) AS rows "
                 f"FROM {self.db.table('history')} WHERE {where}",

@@ -16,7 +16,6 @@ from .contracts.history import HistoryStore
 from .errors import StorageError, StorageMaintenanceError
 from .models import StorageScope
 from .repositories.history import SqlHistoryStore
-from .repositories.leases import Leases
 from .repositories.records import Records
 from .repositories.sessions import SessionRepository
 from .schema import initialize, validate
@@ -60,7 +59,7 @@ class StorageRuntime:
         return history
 
     def records(self, tenant_id: str) -> Records:
-        """Bind records to an explicit tenant and activation epoch."""
+        """Bind records to an explicit tenant and dataset identity."""
         self._check_open()
         if not tenant_id:
             raise ValueError(f"Tenant ID must not be empty")
@@ -69,11 +68,6 @@ class StorageRuntime:
     async def sessions(self, scope: StorageScope) -> SessionRepository:
         """Bind sessions and their history to the same store identity."""
         return SessionRepository(await self.history(scope))
-
-    def leases(self) -> Leases:
-        """Create lease operations for the current activation epoch."""
-        self._check_open()
-        return Leases(self.database, self.epoch)
 
     async def close(self) -> None:
         """Retire handles before closing their shared transport."""
@@ -105,7 +99,7 @@ async def create_storage(
         )
         if meta[f"status"] != f"active":
             raise StorageMaintenanceError(
-                f"Storage is awaiting migration recovery or activation",
+                f"Storage is inactive; online activation is unsupported",
             )
         runtime = StorageRuntime(database, meta[f"epoch"])
         yield runtime

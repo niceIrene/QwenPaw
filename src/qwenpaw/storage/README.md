@@ -27,9 +27,22 @@ directory; they are not yet stored in PG. Legacy JSON-to-SQLite history import i
 skipped on PG startup; switching backends does not implicitly import old data.
 
 Chat metadata, Hub, audit, providers and token usage have not yet been connected
-to SQL repositories. Leases and migration primitives exist, but application
-migration/activation and multi-instance coordination are not connected. This is
-an integration under development, not a complete application storage switch.
+to SQL repositories. This phase supports one application instance. Session
+leases, online backend migration, recovery and activation are outside its scope;
+the unused prototype implementations have been removed. The standalone legacy
+history import helper remains, but it is not an application migration command.
+
+Writes validate ownership without updating or locking the global metadata row.
+History sequence allocation serializes only writers to the same agent store;
+retries may leave sequence gaps while retaining the original event identity.
+Session revision checks still reject stale saves.
+
+Existing prototype databases keep their metadata columns and any old
+`leases`/`migration_jobs` tables; initialization never deletes them. New databases
+do not create those two tables. Inactive datasets are still rejected. Stop all
+workers before administrative database changes; running old migration code
+alongside this runtime is unsupported. This remains an integration under
+development, not a complete application storage switch.
 
 ## Configure a development deployment
 
@@ -76,9 +89,9 @@ With `backend: sqlite`, these CLI commands address the **new SQL schema** at
 their original locations. Neither command migrates or activates that schema for
 the legacy runtime.
 
-Changing the backend does not migrate existing data. Until application migration
-and activation are connected, use a separate development deployment for PG
-testing; legacy JSON sessions are not automatically read by the PG session store.
+Changing the backend does not migrate existing data. Use a separate development
+deployment for PG testing; legacy JSON sessions are not automatically read by
+the PG session store.
 
 ## Verification
 

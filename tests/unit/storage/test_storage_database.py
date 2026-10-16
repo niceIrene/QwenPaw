@@ -10,12 +10,12 @@ from pydantic import ValidationError
 from qwenpaw.storage.config import PostgreSQLConfig, StorageConfig
 from qwenpaw.storage.factory import create_database
 from qwenpaw.storage.errors import (
-    MigrationConflictError,
+    StorageConflictError,
     StorageIdentityError,
     StorageMaintenanceError,
 )
 from qwenpaw.storage.repositories.records import Records
-from qwenpaw.storage.schema import initialize
+from qwenpaw.storage.schema import initialize, validate_write
 
 
 @pytest.mark.asyncio
@@ -25,7 +25,7 @@ async def test_records_isolate_tenants_and_reject_lost_updates(db):
     assert await b.get(f"models", f"same") is None
     assert await b.put(f"models", f"same", {f"model": f"b"}) == 1
     assert await a.put(f"models", f"same", {f"model": f"new"}, revision=1) == 2
-    with pytest.raises(MigrationConflictError):
+    with pytest.raises(StorageConflictError):
         await a.put(f"models", f"same", {f"model": f"stale"}, revision=1)
     assert await a.get(f"models", f"same") == ({f"model": f"new"}, 2)
     assert await b.get(f"models", f"same") == ({f"model": f"b"}, 1)
@@ -40,7 +40,7 @@ async def test_usage_is_idempotent_and_preserves_distinct_events(db):
     )
     assert sum(results) == 1
     assert await records.record_usage(f"other", {f"prompt_tokens": 200})
-    with pytest.raises(MigrationConflictError):
+    with pytest.raises(StorageConflictError):
         await records.record_usage(f"request", {f"prompt_tokens": 500})
     async with db.transaction() as tx:
         rows = await tx.fetch(f"SELECT * FROM {db.table('usage')}")
@@ -68,8 +68,44 @@ async def test_wrong_deployment_cannot_adopt_or_write(db):
     db.config.deployment_id = f"another-deployment"
     with pytest.raises(StorageIdentityError):
         await initialize(db)
-    with pytest.raises(StorageMaintenanceError):
+    with pytest.raises(StorageIdentityError):
         await Records(db, f"tenant", 1).put(f"models", f"one", {})
+
+
+@pytest.mark.asyncio
+async def test_postgres_independent_writes_do_not_lock_global_metadata(db):
+    if db.config.backend != "postgresql":
+        pytest.skip("SQLite intentionally serializes its single connection")
+    # Hold one transaction open after its ownership check and business write.
+    # Another tenant must be able to commit before the first writer finishes.
+    async with db.transaction(write=True) as tx:
+        await validate_write(db, tx, 1)
+        await tx.execute(
+            f"INSERT INTO {db.table('records')} "
+            f"VALUES ({db.binds(3)}, 1, '{{}}')",
+            "first",
+            "models",
+            "one",
+        )
+        await asyncio.wait_for(
+            Records(db, "second", 1).put("models", "one", {}),
+            timeout=2,
+        )
+
+
+@pytest.mark.asyncio
+async def test_init_preserves_tables_from_previous_prototype(db):
+    original = await initialize(db)
+    # Simulate a retired prototype table; it must not be dropped or adopted.
+    retired = db._table("leases")  # pylint: disable=protected-access
+    async with db.transaction(write=True) as tx:
+        await tx.execute(f"CREATE TABLE {retired} (sentinel TEXT)")
+        await tx.execute(f"INSERT INTO {retired} VALUES ('preserved')")
+    assert await initialize(db) == original
+    async with db.transaction() as tx:
+        assert await tx.one(f"SELECT sentinel FROM {retired}") == {
+            "sentinel": "preserved",
+        }
 
 
 @pytest.mark.asyncio

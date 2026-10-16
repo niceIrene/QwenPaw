@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Versioned product-owned tables and dataset write fencing."""
+"""Versioned application tables and read-only ownership checks."""
 
 from __future__ import annotations
 
@@ -10,6 +10,9 @@ from .errors import StorageIdentityError, StorageMaintenanceError
 
 FORMAT_VERSION = 1
 
+# Preserve the prototype's metadata columns for existing development stores.
+# revision/migration_id are inert; no online maintenance transitions exist.
+# New stores omit leases/migration_jobs. Existing extra tables are left intact.
 # Text JSON preserves portable business values; backend indexes are derived.
 DEFINITIONS = {
     f"metadata": f"""
@@ -72,19 +75,6 @@ DEFINITIONS = {
         event_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         PRIMARY KEY (tenant_id, event_id)
-    """,
-    f"leases": f"""
-        store_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        owner_id TEXT NOT NULL,
-        token BIGINT NOT NULL,
-        expires_at DOUBLE PRECISION NOT NULL,
-        PRIMARY KEY (store_id, session_id)
-    """,
-    f"migration_jobs": f"""
-        job_id TEXT PRIMARY KEY,
-        phase TEXT NOT NULL,
-        payload TEXT NOT NULL
     """,
 }
 
@@ -151,15 +141,31 @@ async def validate(db: Database) -> dict:
     return row
 
 
-async def fence_write(db: Database, tx: Transaction, epoch: int) -> None:
-    """Serialize maintenance transitions with committed business writes."""
-    row = await tx.one(
-        f"UPDATE {db.table('metadata')} SET revision=revision+1 "
-        f"WHERE singleton=1 AND status='active' "
-        f"AND epoch={db.bind(1)} AND deployment_id={db.bind(2)} "
-        f"RETURNING revision",
-        epoch,
-        db.config.deployment_id,
-    )
-    if row is None:
-        raise StorageMaintenanceError(f"Storage is fenced or epoch changed")
+async def validate_write(db: Database, tx: Transaction, epoch: int) -> None:
+    """Check ownership without serializing all writers on one metadata row.
+
+    Metadata is immutable during application operation. Administrative changes
+    require stopping all workers; online migration/activation is unsupported.
+    Retain epoch/status checks for databases created by the earlier prototype.
+    """
+    row = await identity(db, tx)
+    if row["deployment_id"] != db.config.deployment_id:
+        raise StorageIdentityError("Storage belongs to another deployment")
+    if row["format_version"] != FORMAT_VERSION:
+        raise StorageIdentityError("Unsupported storage format version")
+    if row["status"] != "active" or row["epoch"] != epoch:
+        raise StorageMaintenanceError(
+            "Storage is inactive or identity changed",
+        )
+
+
+async def inspect_storage(db: Database) -> dict:
+    """Read identity and application row counts without changing the store."""
+    meta = await validate(db)
+    counts = {}
+    async with db.transaction() as tx:
+        for table in sorted(TABLES - {"metadata"}):
+            row = await tx.one(f"SELECT COUNT(*) AS n FROM {db.table(table)}")
+            assert row is not None
+            counts[table] = row["n"]
+    return {"identity": meta, "counts": counts}

@@ -20,8 +20,6 @@ TABLES = frozenset(
         f"checkpoints",
         f"records",
         f"usage",
-        f"leases",
-        f"migration_jobs",
     ),
 )
 
@@ -76,10 +74,6 @@ class Database(ABC):
         return f", ".join(self.bind(i) for i in range(start, start + count))
 
     @abstractmethod
-    def clock(self) -> str:
-        """Return a database-clock expression in epoch seconds."""
-
-    @abstractmethod
     async def open(self, *, create: bool = False) -> None:
         """Open transport without implicitly creating a missing source."""
 
@@ -105,22 +99,5 @@ class Database(ABC):
         """Inspect owned tables without initializing them."""
 
     @abstractmethod
-    async def table_columns(self, tx: Transaction, table: str) -> list[str]:
-        """Inspect columns of a validated product table."""
-
-    @abstractmethod
     async def create_namespace(self, tx: Transaction) -> None:
         """Prepare the namespace inside the initialization transaction."""
-
-    @abstractmethod
-    async def backup_native(
-        self,
-        *,
-        migration_id: str,
-        prior_identity: dict,
-    ) -> Path | None:
-        """Preserve backend-native state before a confirmed overwrite.
-
-        Backends without a native file use the migration's mandatory
-        verified logical snapshot and return None here.
-        """
