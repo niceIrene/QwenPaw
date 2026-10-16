@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-_DEFAULT_ROW_CAP = 1000
+DEFAULT_ROW_CAP = 1000
 _DEFAULT_SEARCH_TURN_MAX_BYTES = 4 * 1024 * 1024
 _DEFAULT_SEARCH_MAX_SECONDS = 5.0
 _SEARCH_HIT_PAGE_SIZE = 64
@@ -345,11 +345,11 @@ class MemorySpace:
         history_db_path: str | Path | None = None,
         session_id: str | None = None,
         agent_id: str | None = None,
-        row_cap: int = _DEFAULT_ROW_CAP,
+        row_cap: int = DEFAULT_ROW_CAP,
         scratch_db_path: str | Path | None = None,
         saved_tool_scan_max_bytes: int = _SAVED_TOOL_SCAN_MAX_BYTES,
         saved_tool_scan_max_seconds: float = _SAVED_TOOL_SCAN_MAX_SECONDS,
-        search_turn_max_rows: int = _DEFAULT_ROW_CAP,
+        search_turn_max_rows: int = DEFAULT_ROW_CAP,
         search_turn_max_bytes: int = _DEFAULT_SEARCH_TURN_MAX_BYTES,
         search_max_seconds: float = _DEFAULT_SEARCH_MAX_SECONDS,
     ) -> None:

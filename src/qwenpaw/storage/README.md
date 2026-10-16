@@ -20,11 +20,21 @@ are removed when the request's context manager closes. A refresh failure raises
 instead of returning stale data. The REPL receives only a read-only sandbox mount
 for this history snapshot; its existing sandbox requirement remains in force.
 
-Snapshots copy the complete agent store in bounded pages on each recall call.
-This preserves compatibility but costs local disk and transfer time proportional
-to history size. REPL scratch tables remain in the workspace's local `.scroll`
-directory; they are not yet stored in PG. Legacy JSON-to-SQLite history import is
-skipped on PG startup; switching backends does not implicitly import old data.
+Structured `expand` and `recall_tool` queries export only matching rows, up to
+MemorySpace's row cap plus one row to retain the truncation notice. Session and
+agent filters are applied in SQL before that limit. These small query views do
+not build an FTS index. Existing pagination, tool media and saved-output handling
+continue to use the same MemorySpace code. Invalid expand ranges, blocked repeat
+pages and calendar calculations do not read PostgreSQL.
+
+Search and the arbitrary-SQL REPL still copy the complete agent store in bounded
+pages, preserving existing FTS5 ranking and cross-session SQL behavior. Their
+transfer and indexing cost remains proportional to history size. A REPL or
+search call always refreshes its complete view, even after a bounded lookup;
+there is no stale-cache fallback. REPL scratch tables remain in the workspace's
+local `.scroll` directory; they are not yet stored in PG. Legacy JSON-to-SQLite
+history import is skipped on PG startup; switching backends does not implicitly
+import old data.
 
 Chat metadata, Hub, audit, providers and token usage have not yet been connected
 to SQL repositories. This phase supports one application instance. Session
