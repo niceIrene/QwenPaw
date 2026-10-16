@@ -2,6 +2,7 @@
 """Disposable SQLite query views of authoritative SQL history."""
 
 from contextlib import aclosing
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -12,6 +13,16 @@ from .legacy_history import SQLiteHistoryStore
 
 class _SnapshotWriter(SQLiteHistoryStore):
     """Preserve source sequences and rebuild the derived search index."""
+
+    def close(self) -> None:
+        super().close()
+        # Each refresh has a unique path; retaining its integrity cache entry
+        # would grow process memory even after the temporary file is removed.
+        with self._integrity_probe_condition:
+            self._integrity_probe_checked.pop(
+                (os.getpid(), self._path.resolve()),
+                None,
+            )
 
     def insert_page(self, rows: list[dict]) -> None:
         columns = ("seq", *COLUMNS)
