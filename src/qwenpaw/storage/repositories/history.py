@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -18,7 +18,7 @@ from ..errors import (
     MigrationConflictError,
 )
 from ..repositories.records import encode
-from ..schema import fence_write
+from ..schema import fence_write, identity
 
 COLUMNS = (
     f"session_id",
@@ -257,6 +257,50 @@ class SqlHistoryStore(HistoryStore):
                 f"ORDER BY seq LIMIT {db.bind(len(args))}",
                 *args,
             )
+
+    async def snapshot_pages(
+        self,
+        *,
+        page_size: int = 1000,
+    ) -> AsyncGenerator[list[dict], None]:
+        """Export one store from a consistent read view, in bounded pages.
+
+        Consumers must close the iterator on failure or cancellation so its
+        transaction releases the connection promptly.
+        """
+        self._check_open()
+        if not 1 <= page_size <= 10000:
+            raise ValueError("History page limit must be between 1 and 10000")
+        db = self.db
+        async with db.transaction(snapshot=True) as tx:
+            meta = await identity(db, tx)
+            store = await tx.one(
+                f"SELECT generation FROM {db.table('stores')} "
+                f"WHERE store_id={db.bind(1)}",
+                self.store_id,
+            )
+            if (
+                meta["epoch"] != self.epoch
+                or meta["status"] != "active"
+                or meta["deployment_id"] != db.config.deployment_id
+                or store is None
+                or store["generation"] != self.store["generation"]
+            ):
+                raise StorageIdentityError("History snapshot identity changed")
+            after = 0
+            while True:
+                rows = await tx.fetch(
+                    f"SELECT * FROM {db.table('history')} "
+                    f"WHERE store_id={db.bind(1)} AND seq>{db.bind(2)} "
+                    f"ORDER BY seq LIMIT {db.bind(3)}",
+                    self.store_id,
+                    after,
+                    page_size,
+                )
+                if not rows:
+                    break
+                yield rows
+                after = rows[-1]["seq"]
 
     async def _select_seqs(self, seqs: set[int]) -> list[dict]:
         self._check_open()
