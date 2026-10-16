@@ -93,3 +93,88 @@ async def test_postgres_snapshot_does_not_mix_concurrent_updates(db):
         await history.update_entry(2, content="changed")
         assert (await anext(pages))[0]["content"] == "second"
     assert await history.contents_by_seqs({2}) == {2: "changed"}
+
+
+@pytest.mark.asyncio
+async def test_filtered_snapshots_preserve_lineage_and_truncation(
+    db,
+    tmp_path,
+):
+    history = await history_for(db)
+    for index, sid in enumerate(("s", "other", "s", "s", "s", "s")):
+        await history.append(
+            session_id=sid,
+            entry=LogEntry(
+                kind="tool_result",
+                content=f"row {index}",
+                tool_call_id="wanted" if index < 5 else "unrelated",
+            ),
+        )
+    # Legacy imports can contain unassigned or differently attributed rows.
+    async with db.transaction(write=True) as tx:
+        await tx.execute(
+            f"UPDATE {db.table('history')} SET agent_id=NULL WHERE seq=1",
+        )
+        await tx.execute(
+            f"UPDATE {db.table('history')} SET agent_id='other' WHERE seq=3",
+        )
+    full, filtered = tmp_path / "full.db", tmp_path / "filtered.db"
+    await refresh_history_snapshot(history, full)
+    with closing(
+        MemorySpace(
+            history_db_path=full,
+            session_id="s",
+            agent_id="agent",
+            row_cap=2,
+        ),
+    ) as ms:
+        expected_expand = ms.expand(1, 6)
+        expected_tool = ms.recall_tool("wanted")
+    for selection, method, args, expected in (
+        (
+            {
+                "after": 0,
+                "through": 6,
+                "session_id": "s",
+                "include_unassigned_agent": True,
+            },
+            "expand",
+            (1, 6),
+            expected_expand,
+        ),
+        (
+            {"tool_call_id": "wanted"},
+            "recall_tool",
+            ("wanted",),
+            expected_tool,
+        ),
+    ):
+        await refresh_history_snapshot(
+            history,
+            filtered,
+            search_index=False,
+            page_size=2,
+            agent_id="agent",
+            limit=3,
+            **selection,
+        )
+        with closing(
+            MemorySpace(
+                history_db_path=filtered,
+                session_id="s",
+                agent_id="agent",
+                row_cap=2,
+            ),
+        ) as ms:
+            assert getattr(ms, method)(*args) == expected
+            assert expected[-1] == {"_truncated": True, "_row_cap": 2}
+            assert ms.sql_query(
+                "SELECT COUNT(*) AS n FROM hist.conversation_history",
+            ) == [{"n": 3}]
+            assert (
+                ms.sql_query(
+                    "SELECT name FROM hist.sqlite_master "
+                    "WHERE name='conversation_history_fts'",
+                )
+                == []
+            )
