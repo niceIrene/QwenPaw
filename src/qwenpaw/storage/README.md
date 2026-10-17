@@ -44,8 +44,8 @@ the newly opened runtime. SQLite still uses the existing `chats.json` file.
 Hub, audit, providers and token usage have not yet been connected to SQL
 repositories. This phase supports one application instance. Session
 leases, online backend migration, recovery and activation are outside its scope;
-the unused prototype implementations have been removed. The standalone legacy
-history import helper remains, but it is not an application migration command.
+the unused prototype implementations have been removed. A manifest-based offline import command covers legacy sessions, history and
+chat metadata; it does not implement online migration or backend activation.
 
 Writes validate ownership without updating or locking the global metadata row.
 History sequence allocation serializes only writers to the same agent store;
@@ -118,3 +118,56 @@ test schemas and removes them after testing:
 pytest tests/unit/storage tests/unit/app/chats tests/unit/app/workspace \
   tests/unit/agents/hooks/test_session_hook.py
 ```
+
+## Offline import into PostgreSQL
+
+Stop **all** application workers before importing. Initialize the PG namespace
+with `storage init`, but do not start the application: importing requires a
+workspace scope that has never been opened. It rejects existing stores or chat
+registries, even if empty. The command does not change the selected backend.
+
+Create an explicit JSON manifest. Paths are relative to the manifest file.
+For the current workspace runtime, set both `workspace_id` and `agent_id` to
+the workspace agent ID:
+
+```json
+{
+  "workspace_id": "default",
+  "agent_id": "default",
+  "history": "workspace/history.db",
+  "chats": "workspace/chats.json",
+  "sessions": [
+    {
+      "session_id": "example-session",
+      "user_id": "example-user",
+      "channel": "console",
+      "path": "workspace/sessions/console/example-user_example-session.json"
+    }
+  ]
+}
+```
+
+Use actual paths and original identities from your installation; the sample
+filename is illustrative. Include every session you want to retain, including
+orphaned session files absent from the chat list. The command imports only
+listed checkpoints, not a directory scan. Every chat and every history session
+must have a mapping. `user_id` and `channel` must match runtime request keys
+exactly; they are required even when empty. Filenames are never decoded to
+infer those values. A session mapping may omit `path` for history-only or
+metadata-only sessions. Omit `history` when there is no legacy history database.
+
+```sh
+qwenpaw storage --config /path/to/pg-config.json import-workspace \
+  /path/to/import.json --offline
+qwenpaw storage --config /path/to/pg-config.json check
+```
+
+History is copied through a temporary SQLite backup, preserving sequence
+numbers and the allocation high-water mark. Raw legacy session IDs are mapped
+to the PG channel/user/session keys. Ambiguous legacy IDs shared by multiple
+users or channels are rejected when importing history. Chat metadata,
+checkpoints and history commit in one transaction; any failure rolls back the
+whole import. Source files are never rewritten. After correcting a failed
+manifest, rerun the command. A successful import cannot be rerun over the same
+scope. Keep the original files as the rollback source and verify the imported
+workspace before resuming application traffic.
