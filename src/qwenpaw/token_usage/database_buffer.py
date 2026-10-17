@@ -26,6 +26,12 @@ class DatabaseTokenUsageBuffer:
         """Accumulate on the producer's event loop without database I/O."""
         _apply_event(self._pending, event)
 
+    def take_pending_events(self) -> list[_UsageEvent]:
+        """Allow backend rebinding only after a successful final flush."""
+        if self._task is not None or self._batch is not None or self._pending:
+            raise RuntimeError("Stop and flush token usage before rebinding")
+        return []
+
     def start(self) -> None:
         """Start the periodic writer once."""
         if self._task is None:
