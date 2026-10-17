@@ -104,7 +104,11 @@ class TokenUsageBuffer:
                 event.model_name,
             )
 
-    async def get_merged_data(self) -> dict:
+    async def get_merged_data(
+        self,
+        start_date: str = "0001-01-01",
+        end_date: str = "9999-12-31",
+    ) -> dict:
         """Return a consistent view of all known token usage.
 
         Combines ``_disk_cache`` (fully processed events) with a snapshot
@@ -124,7 +128,21 @@ class TokenUsageBuffer:
         for ev in pending:
             _apply_event(result, ev)
 
-        return result
+        return {
+            day: entries
+            for day, entries in result.items()
+            if start_date <= day <= end_date
+        }
+
+    def take_pending_events(self) -> list[_UsageEvent]:
+        """Transfer startup events before starting a different backend."""
+        if self._consumer_task is not None or self._dirty:
+            raise RuntimeError("Cannot switch an active token usage buffer")
+        events = []
+        while not self._queue.empty():
+            events.append(self._queue.get_nowait())
+            self._queue.task_done()
+        return events
 
     async def _consumer_loop(self) -> None:
         """Drain events from the queue one by one, updating ``_disk_cache``."""

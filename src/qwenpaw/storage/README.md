@@ -41,11 +41,12 @@ The complete workspace registry is one revisioned JSON record; stale updates
 fail rather than overwrite newer metadata. Reused workspace managers rebind to
 the newly opened runtime. SQLite still uses the existing `chats.json` file.
 
-Hub, audit, providers and token usage have not yet been connected to SQL
-repositories. This phase supports one application instance. Session
-leases, online backend migration, recovery and activation are outside its scope;
-the unused prototype implementations have been removed. A manifest-based offline import command covers legacy sessions, history and
-chat metadata; it does not implement online migration or backend activation.
+Hub, audit and providers have not yet been connected to SQL repositories.
+This phase supports one application instance. Session leases, online backend
+migration, recovery and activation are outside its scope; the unused prototype
+implementations have been removed. A manifest-based offline import command
+covers legacy sessions, history and chat metadata; it does not implement
+online migration or backend activation.
 
 Writes validate ownership without updating or locking the global metadata row.
 History sequence allocation serializes only writers to the same agent store;
@@ -81,8 +82,8 @@ Merge the following into the root `config.json`:
 Set `QWENPAW_POSTGRES_DSN` in the application environment to the PostgreSQL
 connection URI. Credentials are resolved when connecting, not written into
 `config.json`. Keep `deployment_id` stable: an existing namespace belonging to a
-different deployment is rejected. Pools are currently owned per workspace, so
-size the connection limit for the number of loaded workspaces.
+different deployment is rejected. Session pools are owned per workspace, and token usage owns one additional
+application-wide pool. Size connection limits for both.
 
 Initialize the empty SQL namespace explicitly before starting the application:
 
@@ -118,6 +119,29 @@ test schemas and removes them after testing:
 pytest tests/unit/storage tests/unit/app/chats tests/unit/app/workspace \
   tests/unit/agents/hooks/test_session_hook.py
 ```
+
+## Token usage
+
+Selecting PostgreSQL also selects database-backed token usage. Producers keep
+synchronous, in-memory recording; the application flushes batches every ten
+seconds, on reads and on graceful shutdown. Each batch has a stable ID retained
+across retry or cancellation. The batch marker and daily aggregates commit in
+one transaction, so retrying a committed write after a lost response does not
+count the same usage twice. Existing tables are reused; no schema upgrade is
+required. Queries read only daily records within the requested date range.
+Provider/model/agent dimensions and prompt-cache statistics remain unchanged.
+
+Usage storage is initialized before the application serves requests. It has its
+own application-wide pool, which stays open until workspace shutdown finishes
+and the final usage flush runs. Connection failures propagate; there is no
+fallback to local JSON when PG is selected. SQLite keeps its original JSON
+buffer. Startup events queued before backend selection are preserved.
+
+As with the existing file buffer, unflushed data lives in process memory. A hard
+crash or failed final flush can lose those events; this is not a durable event
+queue. Batch markers currently have no automatic retention policy. Existing
+local usage JSON is not imported by `import-workspace`, which only handles
+workspace sessions, history and chat metadata.
 
 ## Offline import into PostgreSQL
 
