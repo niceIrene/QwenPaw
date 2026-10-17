@@ -97,6 +97,11 @@ class ChatManager:  # pylint: disable=too-many-public-methods
         """Update the browser lifecycle callback when a service is reused."""
         self._on_session_closed = callback
 
+    async def set_repository(self, repo: BaseChatRepository) -> None:
+        """Rebind a reused manager after workspace storage has reopened."""
+        async with self._lock:
+            self._repo = repo
+
     # ----- Read Operations -----
 
     async def list_chats(

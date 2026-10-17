@@ -164,6 +164,9 @@ async def create_chat_service(
     # pylint: disable=protected-access
     from ..chats.manager import ChatManager
     from ..chats.repo.json_repo import JsonChatRepository
+    from ..chats.repo.database_repo import DatabaseChatRepository
+    from ..chats.database_session import DatabaseSession
+    from ...storage.errors import StorageError
     from ...browser.runtime.links import link_for
     from ...browser.execution.kernel import get_default_kernel_manager
     from ...browser.tool_entrypoint import derive_workspace_id
@@ -174,18 +177,27 @@ async def create_chat_service(
             session_id,
         )
 
+    if isinstance(ws.session, DatabaseSession):
+        if ws.session.runtime is None:
+            raise StorageError("Session storage is not open")
+        chat_repo = DatabaseChatRepository(
+            ws.session.runtime.records(ws.session.scope.tenant_id),
+            ws.session.scope,
+        )
+    else:
+        chat_repo = JsonChatRepository(str(ws.workspace_dir / "chats.json"))
+
     if service is not None:
         cm = service
+        await cm.set_repository(chat_repo)
         logger.info(f"Reusing ChatManager for {ws.agent_id}")
     else:
-        chats_path = str(ws.workspace_dir / "chats.json")
-        chat_repo = JsonChatRepository(chats_path)
         cm = ChatManager(
             repo=chat_repo,
             on_session_closed=close_browser_session,
         )
         publish(cm)
-        logger.info(f"ChatManager created: {chats_path}")
+        logger.info(f"ChatManager created: {chat_repo.path}")
     cm.set_on_session_closed(close_browser_session)
 
     async def live_session_ids() -> set[str]:

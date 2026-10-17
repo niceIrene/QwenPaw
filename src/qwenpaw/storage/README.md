@@ -36,8 +36,13 @@ local `.scroll` directory; they are not yet stored in PG. Legacy JSON-to-SQLite
 history import is skipped on PG startup; switching backends does not implicitly
 import old data.
 
-Chat metadata, Hub, audit, providers and token usage have not yet been connected
-to SQL repositories. This phase supports one application instance. Session
+Chat lists, titles, groups, pinned and archived status use the same PG runtime.
+The complete workspace registry is one revisioned JSON record; stale updates
+fail rather than overwrite newer metadata. Reused workspace managers rebind to
+the newly opened runtime. SQLite still uses the existing `chats.json` file.
+
+Hub, audit, providers and token usage have not yet been connected to SQL
+repositories. This phase supports one application instance. Session
 leases, online backend migration, recovery and activation are outside its scope;
 the unused prototype implementations have been removed. The standalone legacy
 history import helper remains, but it is not an application migration command.
