@@ -212,9 +212,9 @@ Selecting PG is still a partial application storage switch:
 - Built-in ZIP backup rejects PG workspace backups. Restore rejects PG
   workspace replacement and PG database-configuration changes before mutation.
   Config-only restores that retain the same storage configuration, and
-  secrets/skills-only operations remain available. Full PG backup/restore is
-  not implemented: use a database backup plus a matching filesystem snapshot
-  while all workers are stopped.
+  secrets/skills-only operations remain available. Application SQL backup/restore is
+  available through `storage backup/restore` for the application SQL tables;
+  pair it with a matching filesystem snapshot while all workers are stopped.
 - Workspace export/clone/import and doctor checks still contain filesystem
   assumptions. A file export is not a backup of PG records.
 - `import-workspace` covers sessions, history and chats. Separate offline
@@ -268,3 +268,49 @@ the daily totals and import marker; retries after success are rejected rather
 than adding counts twice. Legacy row keys, cache counters and absent agent IDs
 are preserved. Invalid JSON, dates or counters are rejected instead of being
 treated as empty data. Existing sessions and other tenants are unaffected.
+
+## Back up and restore application SQL data
+
+Stop all application workers. The dedicated storage commands cover all six
+current application tables: metadata, stores, history, checkpoints, records
+and usage. This includes session revisions, sequence high-water marks,
+chat/cron metadata, cron history, usage totals and usage deduplication markers.
+
+```sh
+qwenpaw storage --config /path/to/source-config.json backup \
+  /path/to/storage-backup.jsonl --offline
+```
+
+The source is read in one consistent database snapshot, in bounded batches.
+The backup file is created with owner-only permissions and published atomically
+only after writing and flushing its contents. An existing destination is never
+overwritten. The JSON-lines format includes metadata, rows, per-table counts
+and a SHA-256 checksum; the checksum detects corruption, not authenticity or
+encryption. Connection credentials and SQL commands are not stored in it.
+
+Prepare a separate empty PG namespace using the same `deployment_id`. The
+connection, schema and table prefix may differ from the source. Initialize the
+namespace with the CLI and do not start the application before restoring:
+
+```sh
+qwenpaw storage --config /path/to/target-config.json init
+qwenpaw storage --config /path/to/target-config.json restore \
+  /path/to/storage-backup.jsonl --offline
+qwenpaw storage --config /path/to/target-config.json check
+```
+
+Restore checks ownership and format, refuses any existing business rows, and
+inserts all rows plus the original dataset identity in a single transaction.
+A malformed, truncated or checksum-mismatched backup rolls back every inserted
+row and leaves the target's original metadata unchanged. The command never
+clears a populated namespace; use a new namespace to test a restore before
+switching the application's configuration.
+
+These commands back up the application's current SQL schema, not the complete
+PostgreSQL server. Retired prototype tables, other applications' tables, roles
+and server settings are outside this format. Workspace files, attachments,
+local config, secrets, memory stores, Hub and audit databases remain separate.
+Save and restore matching filesystem data during the same maintenance window.
+The web ZIP workflow remains file-only and its PG workspace protection stays
+in place; it does not yet coordinate both parts automatically. Default SQLite
+installations continue to use their existing file backup workflow.
