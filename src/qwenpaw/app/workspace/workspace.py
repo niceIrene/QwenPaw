@@ -31,6 +31,7 @@ from .service_manager import ServiceDescriptor, ServiceManager
 from .workspace_plugins import WorkspacePlugins
 from .service_factories import (
     create_session_service,
+    create_job_repository,
     create_driver_service,
     create_driver_config_watcher,
     create_chat_service,
@@ -43,7 +44,6 @@ from ..task_tracker import TaskTracker
 from ..chats.session import SafeJSONSession
 from ..chats.database_session import DatabaseSession
 from ..crons.manager import CronManager
-from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
 from ...utils.logging import sanitize_log_value
 
@@ -592,9 +592,7 @@ class Workspace:
                 name="cron_manager",
                 service_class=CronManager,
                 init_args=lambda ws: {
-                    "repo": JsonJobRepository(
-                        str(ws.workspace_dir / "jobs.json"),
-                    ),
+                    "repo": create_job_repository(ws),
                     "workspace": ws,
                     "channel_manager": ws._service_manager.services.get(
                         "channel_manager",

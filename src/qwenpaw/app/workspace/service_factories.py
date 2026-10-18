@@ -46,6 +46,23 @@ async def create_session_service(
     return service
 
 
+def create_job_repository(ws: "Workspace"):
+    """Use the workspace's session runtime for cron persistence as well."""
+    from ..chats.database_session import DatabaseSession
+    from ..crons.repo.database_repo import DatabaseJobRepository
+    from ..crons.repo.json_repo import JsonJobRepository
+    from ...storage.errors import StorageError
+
+    if isinstance(ws.session, DatabaseSession):
+        if ws.session.runtime is None:
+            raise StorageError("Session storage is not open")
+        return DatabaseJobRepository(
+            ws.session.runtime.records(ws.session.scope.tenant_id),
+            ws.session.scope,
+        )
+    return JsonJobRepository(ws.workspace_dir / "jobs.json")
+
+
 async def create_driver_service(
     ws: "Workspace",
     _service,

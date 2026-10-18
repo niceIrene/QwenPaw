@@ -41,7 +41,15 @@ The complete workspace registry is one revisioned JSON record; stale updates
 fail rather than overwrite newer metadata. Reused workspace managers rebind to
 the newly opened runtime. SQLite still uses the existing `chats.json` file.
 
-Hub, audit and providers have not yet been connected to SQL repositories.
+Cron definitions and execution history now use the same workspace PG runtime.
+The registry and history are separate revisioned records. History retains the
+existing per-job limit (normally 50); concurrent callbacks in one repository
+serialize their history updates, while stale writes from another instance fail.
+Cron shutdown cancels and drains callbacks before session storage is closed,
+including cancellation history and checkpoint cleanup. SQLite continues using
+`jobs.json` and `jobs_history`. Existing local jobs are not automatically imported.
+
+Hub, audit, inbox events and providers remain on their existing local stores.
 This phase supports one application instance. Session leases, online backend
 migration, recovery and activation are outside its scope; the unused prototype
 implementations have been removed. A manifest-based offline import command
@@ -195,3 +203,21 @@ whole import. Source files are never rewritten. After correcting a failed
 manifest, rerun the command. A successful import cannot be rerun over the same
 scope. Keep the original files as the rollback source and verify the imported
 workspace before resuming application traffic.
+
+## Remaining integration boundaries
+
+Selecting PG is still a partial application storage switch:
+
+- Hub data and governance audit still use their own SQLite databases.
+- Inbox events use local JSON; provider/model selections use provider files.
+- Backups, workspace export/clone/import and doctor checks still contain
+  filesystem assumptions. A file backup is not a backup of PG records.
+- `import-workspace` covers sessions, history and chats, not cron definitions,
+  cron execution history or application-wide usage totals.
+- Memory services have separate persistence configuration; selecting this
+  backend does not select PostgreSQL for their memory/vector stores.
+
+Workspace files, attachments, driver YAML, secrets and Shadow Git checkpoints
+also remain local. Moving database records does not replace their filesystem
+requirements. Do not treat this configuration as a stateless or multi-replica
+deployment mode.
