@@ -14,6 +14,7 @@ from ..models import BackupMeta
 from ...config.utils import load_config
 from ...constant import BACKUP_DIR
 from .create_helpers import add_files_to_zip
+from .database_checks import check_backup_database
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ def _compress_to_tmp(
 
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
         config = load_config()
+        check_backup_database(config, include_agents=meta.scope.include_agents)
         if meta.scope.include_agents:
             valid_agents, missing_agents = _compute_initial_agents(
                 req_agents,
