@@ -726,3 +726,46 @@ async def test_api_create_defaults_to_unshared_session(tmp_path):
     created = await create_job(CronJobSpec.model_validate(payload), manager)
     saved = await repo.get_job(created.id)
     assert saved.runtime.share_session is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("trigger", ["manual", "scheduled"])
+async def test_stop_waits_for_cancelled_run_history(manager, repo, trigger):
+    job = make_cron_job_spec(job_id="drain", enabled=False)
+    await repo.upsert_job(job)
+    executing = asyncio.Event()
+    writing_history = asyncio.Event()
+    release_history = asyncio.Event()
+    original_append = repo.append_history
+
+    async def execute(_job):
+        executing.set()
+        await asyncio.Event().wait()
+
+    async def append_history(*args, **kwargs):
+        writing_history.set()
+        await release_history.wait()
+        return await original_append(*args, **kwargs)
+
+    manager._executor.execute = execute
+    repo.append_history = append_history
+    await manager.start()
+    if trigger == "manual":
+        await manager.run_job(job.id)
+    else:
+        manager._scheduler.add_job(
+            manager._scheduled_callback,
+            "date",
+            args=[job.id],
+        )
+    await asyncio.wait_for(executing.wait(), timeout=2)
+    stopping = asyncio.create_task(manager.stop())
+    try:
+        await asyncio.wait_for(writing_history.wait(), timeout=2)
+        assert not stopping.done()
+    finally:
+        release_history.set()
+        await asyncio.wait_for(stopping, timeout=2)
+    records = await repo.get_history(job.id)
+    assert len(records) == 1
+    assert records[0].status == "cancelled"

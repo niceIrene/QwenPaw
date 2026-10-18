@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+from functools import wraps
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -64,6 +65,28 @@ class _Runtime:
     sem: asyncio.Semaphore
 
 
+def _tracked_callback(callback):
+    """Keep callbacks alive through cancellation cleanup during shutdown."""
+    # This decorator is private to CronManager's callback lifecycle.
+    # pylint: disable=protected-access
+
+    @wraps(callback)
+    async def tracked(self, *args, **kwargs):
+        if self._stopping:
+            return None
+        task = asyncio.current_task()
+        assert task is not None
+        owns_registration = task not in self._active_tasks
+        self._active_tasks.add(task)
+        try:
+            return await callback(self, *args, **kwargs)
+        finally:
+            if owns_registration:
+                self._active_tasks.discard(task)
+
+    return tracked
+
+
 class CronManager(ManagerBase):
     endpoint_prefix = "crons"
 
@@ -91,12 +114,15 @@ class CronManager(ManagerBase):
         self._history: Dict[str, list[CronExecutionRecord]] = {}
         self._rt: Dict[str, _Runtime] = {}
         self._started = False
+        self._stopping = False
+        self._active_tasks: set[asyncio.Task] = set()
         self._keepalive_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         async with self._lock:
             if self._started:
                 return
+            self._stopping = False
             jobs_file = await self._repo.load()
             valid_job_ids = {
                 job.id for job in jobs_file.jobs if job.id is not None
@@ -172,8 +198,7 @@ class CronManager(ManagerBase):
 
     async def stop(self) -> None:
         async with self._lock:
-            if not self._started:
-                return
+            self._stopping = True
             self._started = False
             keepalive = self._keepalive_task
             self._keepalive_task = None
@@ -188,7 +213,19 @@ class CronManager(ManagerBase):
                         "Error cancelling cron keepalive task: %s",
                         repr(exc),
                     )
-            self._scheduler.shutdown(wait=False)
+            if self._scheduler.running:
+                self._scheduler.shutdown(wait=False)
+
+        # AsyncIOScheduler schedules its shutdown on the event loop. Let it
+        # cancel scheduled jobs first, then cancel manual runs without issuing
+        # a second cancellation during their history/checkpoint cleanup.
+        await asyncio.sleep(0)
+        tasks = list(self._active_tasks)
+        for task in tasks:
+            if not task.cancelling():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _keepalive_loop(self) -> None:
         """Keep the asyncio event loop ticking while cron is running.
@@ -764,6 +801,7 @@ class CronManager(ManagerBase):
         elif event.code == EVENT_JOB_MAX_INSTANCES:
             asyncio.create_task(self._handle_job_max_instances(event))
 
+    @_tracked_callback
     async def _handle_job_missed(self, event: JobExecutionEvent) -> None:
         job_id = event.job_id
         if self._is_internal_job(job_id):
@@ -787,6 +825,7 @@ class CronManager(ManagerBase):
         )
         await self._record_skipped(job, error_msg)
 
+    @_tracked_callback
     async def _handle_job_max_instances(
         self,
         event: JobSubmissionEvent,
@@ -966,6 +1005,7 @@ class CronManager(ManagerBase):
         interval_seconds = parse_heartbeat_every(every)
         return IntervalTrigger(seconds=interval_seconds)
 
+    @_tracked_callback
     async def _scheduled_callback(self, job_id: str) -> None:
         job = await self._repo.get_job(job_id)
         if not job:
@@ -1003,6 +1043,7 @@ class CronManager(ManagerBase):
             tz = timezone.utc
         return datetime.now(tz)
 
+    @_tracked_callback
     async def _heartbeat_callback(self) -> None:
         """Run one heartbeat (HEARTBEAT.md as query, optional dispatch)."""
         try:
@@ -1024,6 +1065,7 @@ class CronManager(ManagerBase):
         except Exception:  # pylint: disable=broad-except
             logger.exception("heartbeat run failed")
 
+    @_tracked_callback
     async def _run_service_job(
         self,
         source: str,
@@ -1053,6 +1095,7 @@ class CronManager(ManagerBase):
                 exc_info=True,
             )
 
+    @_tracked_callback
     # pylint: disable-next=too-many-branches,too-many-statements
     async def _execute_once(
         self,
