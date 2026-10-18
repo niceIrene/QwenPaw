@@ -209,8 +209,14 @@ Selecting PG is still a partial application storage switch:
 
 - Hub data and governance audit still use their own SQLite databases.
 - Inbox events use local JSON; provider/model selections use provider files.
-- Backups, workspace export/clone/import and doctor checks still contain
-  filesystem assumptions. A file backup is not a backup of PG records.
+- Built-in ZIP backup rejects PG workspace backups. Restore rejects PG
+  workspace replacement and PG database-configuration changes before mutation.
+  Config-only restores that retain the same storage configuration, and
+  secrets/skills-only operations remain available. Full PG backup/restore is
+  not implemented: use a database backup plus a matching filesystem snapshot
+  while all workers are stopped.
+- Workspace export/clone/import and doctor checks still contain filesystem
+  assumptions. A file export is not a backup of PG records.
 - `import-workspace` covers sessions, history and chats. Separate offline
   commands import cron data and application-wide usage totals.
 - Memory services have separate persistence configuration; selecting this
