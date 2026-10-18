@@ -217,6 +217,10 @@ Selecting PG is still a partial application storage switch:
   pair it with a matching filesystem snapshot while all workers are stopped.
 - Workspace export/clone/import and doctor checks still contain filesystem
   assumptions. A file export is not a backup of PG records.
+  Doctor's cron check reads PG job definitions when PostgreSQL is selected;
+  it ignores legacy `jobs.json` files and reports database failures without
+  falling back to local files. Other filesystem checks still apply to local
+  workspace assets.
 - `import-workspace` covers sessions, history and chats. Separate offline
   commands import cron data and application-wide usage totals.
 - Memory services have separate persistence configuration; selecting this
