@@ -147,9 +147,8 @@ buffer. Startup events queued before backend selection are preserved.
 
 As with the existing file buffer, unflushed data lives in process memory. A hard
 crash or failed final flush can lose those events; this is not a durable event
-queue. Batch markers currently have no automatic retention policy. Existing
-local usage JSON is not imported by `import-workspace`, which only handles
-workspace sessions, history and chat metadata.
+queue. Batch markers currently have no automatic retention policy. Application-wide legacy usage JSON has a separate `import-usage` command;
+`import-workspace` handles sessions, history and chat metadata.
 
 ## Offline import into PostgreSQL
 
@@ -212,8 +211,8 @@ Selecting PG is still a partial application storage switch:
 - Inbox events use local JSON; provider/model selections use provider files.
 - Backups, workspace export/clone/import and doctor checks still contain
   filesystem assumptions. A file backup is not a backup of PG records.
-- `import-workspace` covers sessions, history and chats, not cron definitions,
-  cron execution history or application-wide usage totals.
+- `import-workspace` covers sessions, history and chats. Separate offline
+  commands import cron data and application-wide usage totals.
 - Memory services have separate persistence configuration; selecting this
   backend does not select PostgreSQL for their memory/vector stores.
 
@@ -221,3 +220,45 @@ Workspace files, attachments, driver YAML, secrets and Shadow Git checkpoints
 also remain local. Moving database records does not replace their filesystem
 requirements. Do not treat this configuration as a stateless or multi-replica
 deployment mode.
+
+## Import cron and usage data
+
+Stop all workers and use the same initialized PG configuration. These imports
+are separate atomic operations and can run after `import-workspace` or after a
+workspace has already been opened, provided their target records remain empty.
+Neither command changes the selected backend or modifies source files.
+
+For cron, create a manifest with paths relative to that manifest:
+
+```json
+{
+  "workspace_id": "default",
+  "agent_id": "default",
+  "jobs": "workspace/jobs.json",
+  "history": {
+    "original-job-id": "workspace/jobs_history/original-job-id.json"
+  }
+}
+```
+
+Use actual job IDs as history keys, and actual filenames as values (legacy
+filenames may be URL encoded). The `history` mapping may be omitted. Only listed
+history files are imported, and each must belong to a job in `jobs.json`. The
+import preserves enabled status, schedule, dispatch and execution records; old
+jobs lacking `share_session` retain the legacy default of `true`. Resuming the
+application will resume enabled schedules. Existing target job or history
+records, including empty ones, cause the whole cron import to fail.
+
+```sh
+qwenpaw storage --config /path/to/pg-config.json import-cron \
+  /path/to/cron-import.json --offline
+qwenpaw storage --config /path/to/pg-config.json import-usage \
+  /path/to/token_usage.json --offline
+```
+
+Usage is application-wide: run its import once per deployment, not once per
+workspace. It requires no existing PG usage totals. A single transaction writes
+the daily totals and import marker; retries after success are rejected rather
+than adding counts twice. Legacy row keys, cache counters and absent agent IDs
+are preserved. Invalid JSON, dates or counters are rejected instead of being
+treated as empty data. Existing sessions and other tenants are unaffected.

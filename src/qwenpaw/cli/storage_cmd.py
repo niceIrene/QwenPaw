@@ -14,6 +14,8 @@ from ..storage.factory import create_database
 from ..storage.factory import create_storage
 from ..storage.config import StorageBackend
 from ..storage.migration.workspace import import_workspace
+from ..storage.migration.cron import import_cron
+from ..storage.migration.usage import import_usage
 from ..storage.schema import initialize, inspect_storage
 
 
@@ -78,13 +80,13 @@ def check_storage(ctx: click.Context) -> None:
     _run(ctx, create=False)
 
 
-async def _import_workspace(config, root, manifest: Path) -> str:
+async def _import_data(config, root, source: Path, importer):
     if config.backend != StorageBackend.POSTGRESQL:
-        raise click.ClickException("Workspace import requires PostgreSQL")
+        raise click.ClickException("Legacy import requires PostgreSQL")
     async with create_storage(config, root) as runtime:
-        return await import_workspace(
+        return await importer(
             runtime.database,
-            manifest,
+            source,
             tenant_id=config.deployment_id,
             epoch=runtime.epoch,
         )
@@ -107,9 +109,14 @@ def import_workspace_command(
     """Import legacy sessions, history and chats into an unused PG scope."""
     if not offline:
         raise click.ClickException("Stop all workers and pass --offline")
+    store_id = _run_import(ctx, manifest, import_workspace)
+    click.echo(json.dumps({"store_id": store_id, "imported": True}))
+
+
+def _run_import(ctx: click.Context, source: Path, importer):
     config, root = ctx.obj
     try:
-        store_id = asyncio.run(_import_workspace(config, root, manifest))
+        return asyncio.run(_import_data(config, root, source, importer))
     except (StorageError, click.ClickException) as exc:
         raise click.ClickException(str(exc)) from exc
     except Exception as exc:
@@ -117,4 +124,45 @@ def import_workspace_command(
             "Import failed; check the manifest, source files and database "
             f"connection ({type(exc).__name__}).",
         ) from exc
-    click.echo(json.dumps({"store_id": store_id, "imported": True}))
+
+
+@storage_group.command("import-cron")
+@click.argument("manifest", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--offline",
+    is_flag=True,
+    required=True,
+    help="Confirm all application workers are stopped.",
+)
+@click.pass_context
+def import_cron_command(
+    ctx: click.Context,
+    manifest: Path,
+    offline: bool,
+) -> None:
+    """Import cron definitions and history into empty cron records."""
+    if not offline:
+        raise click.ClickException("Stop all workers and pass --offline")
+    count = _run_import(ctx, manifest, import_cron)
+    click.echo(json.dumps({"jobs": count, "imported": True}))
+
+
+@storage_group.command("import-usage")
+@click.argument("source", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--offline",
+    is_flag=True,
+    required=True,
+    help="Confirm all application workers are stopped.",
+)
+@click.pass_context
+def import_usage_command(
+    ctx: click.Context,
+    source: Path,
+    offline: bool,
+) -> None:
+    """Import application-wide legacy usage JSON into empty PG totals."""
+    if not offline:
+        raise click.ClickException("Stop all workers and pass --offline")
+    count = _run_import(ctx, source, import_usage)
+    click.echo(json.dumps({"days": count, "imported": True}))
