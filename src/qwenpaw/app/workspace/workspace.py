@@ -31,6 +31,7 @@ from ...utils.io_utils import run_async_to_completion
 from .service_manager import ServiceDescriptor, ServiceManager
 from .workspace_plugins import WorkspacePlugins
 from .service_factories import (
+    create_session_service,
     create_driver_service,
     create_driver_config_watcher,
     create_chat_service,
@@ -519,10 +520,8 @@ class Workspace:
         sm.register(
             ServiceDescriptor(
                 name="session",
-                service_class=SafeJSONSession,
-                init_args=lambda ws: {
-                    "save_dir": str(ws.workspace_dir / "sessions"),
-                },
+                post_init=create_session_service,
+                stop_method="close",
                 priority=10,
                 concurrent_init=False,
             ),

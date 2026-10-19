@@ -182,6 +182,11 @@ def _looks_like_project_path(value: str) -> bool:
         ),
         "task": ("qwenpaw.cli.task_cmd", "task_cmd", ".task_cmd"),
         "doctor": ("qwenpaw.cli.doctor_cmd", "doctor_cmd", ".doctor_cmd"),
+        "storage": (
+            "qwenpaw.cli.storage_cmd",
+            "storage_group",
+            ".storage_cmd",
+        ),
         "auto": ("qwenpaw.cli.auto", "auto_group", ".auto"),
     },
 )
