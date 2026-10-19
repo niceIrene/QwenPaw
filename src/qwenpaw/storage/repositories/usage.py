@@ -88,6 +88,10 @@ class UsageRepository:
                     "token_usage",
                     day,
                 )
+                if row is None:
+                    raise StorageConflictError(
+                        "Usage aggregate row disappeared",
+                    )
                 totals = json.loads(row["payload"])
                 merge_daily_usage(totals, delta[day])
                 await tx.execute(
