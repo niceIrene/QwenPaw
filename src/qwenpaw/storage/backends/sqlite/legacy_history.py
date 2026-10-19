@@ -15,6 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .history_schema import (
+    RECALL_TOOL_NAMES as _RECALL_TOOL_NAMES,
+    create_history_tables,
+    create_history_fts,
+    rebuild_history_fts,
+)
 from ....agents.context.types import LogEntry
 from ....agents.context.scroll.history import HistoryStore, UNCHANGED
 
@@ -30,11 +36,6 @@ _BUSY_TIMEOUT_MS = 5000
 # these rows stay durable + recallable by ``seq``, but are kept OUT of the FTS
 # index (and out of ``search`` — see ``MemorySpace``). Must match the recall
 # tool names in ``repl.py`` and ``recall_tool.py``.
-_RECALL_TOOL_NAMES = (
-    "recall_history_python",
-    "recall_history",
-)
-
 # Columns of conversation_history, in INSERT order (minus the
 # autoincrement seq).
 _INSERT_COLUMNS = (
@@ -309,23 +310,7 @@ class SQLiteHistoryStore(HistoryStore):
         )
 
     def _rebuild_fts(self) -> None:
-        self._conn.execute(
-            "INSERT INTO conversation_history_fts"
-            "(conversation_history_fts) VALUES('rebuild')",
-        )
-        # Rebuild includes every source row. Remove the deliberately excluded
-        # rows now, while we know they are indexed, in the same transaction.
-        for row in self._conn.execute(
-            "SELECT seq, content FROM conversation_history "
-            "WHERE name IN (?, ?)",
-            _RECALL_TOOL_NAMES,
-        ).fetchall():
-            self._conn.execute(
-                "INSERT INTO conversation_history_fts"
-                "(conversation_history_fts, rowid, content) "
-                "VALUES('delete', ?, ?)",
-                (row["seq"], row["content"] or ""),
-            )
+        rebuild_history_fts(self._conn)
 
     def _repair_fts(self) -> None:
         logger.warning("Rebuilding damaged history FTS index: %s", self._path)
@@ -393,52 +378,7 @@ class SQLiteHistoryStore(HistoryStore):
 
     def _init_schema(self) -> None:
         with self._conn:
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS conversation_history (
-                    seq          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id   TEXT NOT NULL,
-                    agent_id     TEXT,
-                    kind         TEXT NOT NULL,
-                    role         TEXT,
-                    name         TEXT,
-                    content      TEXT,
-                    tool_call_id TEXT,
-                    tool_input   TEXT,
-                    tool_state   TEXT,
-                    headline     TEXT,
-                    blocks       TEXT,
-                    metadata     TEXT,
-                    created_at   TEXT,
-                    dedup_key    TEXT
-                )
-                """,
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS ch_session "
-                "ON conversation_history(session_id)",
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS ch_agent "
-                "ON conversation_history(agent_id)",
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS ch_kind "
-                "ON conversation_history(kind)",
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS ch_created_at "
-                "ON conversation_history(created_at)",
-            )
-            # Idempotency net: a second append of the same logical event, such
-            # as a resume re-persisting its restored window, collides here and
-            # is dropped by ON CONFLICT rather than duplicating a row. NULL
-            # dedup_key never conflicts, so un-keyed rows are simply never
-            # deduped.
-            self._conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ux_dedup "
-                "ON conversation_history(session_id, dedup_key)",
-            )
+            create_history_tables(self._conn)
             self._init_fts()
 
     def _init_fts(self) -> None:
@@ -461,11 +401,7 @@ class SQLiteHistoryStore(HistoryStore):
                 "SELECT 1 FROM sqlite_master WHERE type='table' "
                 "AND name='conversation_history_fts'",
             ).fetchone()
-            self._conn.execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS conversation_history_fts "
-                "USING fts5(content, content='conversation_history', "
-                "content_rowid='seq', tokenize='porter unicode61')",
-            )
+            create_history_fts(self._conn)
             if not existed:
                 self._rebuild_fts()
             self._fts = True

@@ -446,7 +446,7 @@ class CommandHandler(ConversationCommandHandlerMixin):
                     continuation_text = scroll_mgr.describe_summary()
                     compress_stats = dict(scroll_mgr.last_compress)
                 finally:
-                    await run_sync_io(scroll_mgr.close)
+                    await scroll_mgr.aclose()
             else:
                 with manual_compact_memory_by_handler():
                     await agent.compress_context(
@@ -628,9 +628,9 @@ class CommandHandler(ConversationCommandHandlerMixin):
 
         Returns ``None`` unless the strategy is ``scroll`` and a workspace is
         known — in which case the caller stays on native compression. The
-        manager opens the workspace ``history.db``; the caller must
-        ``close()`` it. No model is needed at construction (compaction reads it
-        from the agent passed to ``compress``).
+        manager uses the workspace's configured history backend; the caller
+        must await ``aclose()``. Compaction reads the model from the agent
+        passed to ``compress``.
         """
         lcc = agent_config.running.light_context_config
         if (
@@ -638,9 +638,34 @@ class CommandHandler(ConversationCommandHandlerMixin):
             or not self._workspace_dir
         ):
             return None
+        # Standalone slash commands share the same workspace storage and
+        # encoded session identity as normal agent turns.
+        from ..app.chats.database_session import DatabaseSession
+        from ..storage.errors import StorageError
+        from ..storage.repositories.sessions import SessionKey
+        from .context.scroll.manager import ScrollContextManager
+
+        workspace = getattr(self._prompt_context, "workspace", None)
+        session = getattr(workspace, "session", None)
+        if isinstance(session, DatabaseSession):
+            if session.runtime is None:
+                raise StorageError("Session storage is not open")
+            request = getattr(self._prompt_context, "request", None)
+            sid = self._session_id or "local"
+            key = SessionKey(
+                sid,
+                getattr(request, "user_id", "") or sid,
+                getattr(request, "channel", "") or "",
+            )
+            history = await session.runtime.history(session.scope)
+            return ScrollContextManager(
+                history=history,
+                session_id=key.encode(),
+                agent_id=session.scope.agent_id,
+                offloader=self._offloader,
+            )
         try:
             from ..storage.factory import create_legacy_history
-            from .context.scroll.manager import ScrollContextManager
 
             sc = lcc.scroll_config
             history = await run_sync_io(

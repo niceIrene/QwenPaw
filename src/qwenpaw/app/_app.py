@@ -93,7 +93,12 @@ async def _sync_scroll_history_on_startup() -> None:
     """Run the composed legacy-history migration outside the event loop."""
     try:
         from ..agents.context.scroll.sync import sync_all_scroll_agents
+        from ..config import load_config
+        from ..storage.config import StorageBackend
 
+        config = await run_sync_io(load_config)
+        if config.storage.backend == StorageBackend.POSTGRESQL:
+            return
         await run_sync_io(sync_all_scroll_agents)
     except Exception:  # noqa: BLE001 - session sync must never block startup
         logger.warning("session-sync: import/launch failed", exc_info=True)

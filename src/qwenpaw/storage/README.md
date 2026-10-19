@@ -11,10 +11,34 @@ remember a request-local revision; a concurrent stale save fails instead of
 overwriting newer state. Database errors propagate from session hooks instead of
 being treated as a missing session or a successful save.
 
-The async history, lease and migration repositories are available, but scroll,
-MemorySpace/REPL, chat metadata, Hub, audit, providers and token usage have not yet
-been connected to them. In particular, selecting PostgreSQL does **not** move
-scroll history out of SQLite or make a multi-instance deployment safe. This is
+Selecting PostgreSQL now also routes scroll history through the workspace SQL
+runtime. History commits before sequence bookkeeping and normal session
+checkpoints. Recall reads a fresh, consistent PG snapshot through a temporary
+SQLite query database, preserving MemorySpace SQL and FTS5 behavior. Snapshots
+retain source sequence numbers, are scoped to the workspace's agent store, and
+are removed when the request's context manager closes. A refresh failure raises
+instead of returning stale data. The REPL receives only a read-only sandbox mount
+for this history snapshot; its existing sandbox requirement remains in force.
+
+Structured `expand` and `recall_tool` queries export only matching rows, up to
+MemorySpace's row cap plus one row to retain the truncation notice. Session and
+agent filters are applied in SQL before that limit. These small query views do
+not build an FTS index. Existing pagination, tool media and saved-output handling
+continue to use the same MemorySpace code. Invalid expand ranges, blocked repeat
+pages and calendar calculations do not read PostgreSQL.
+
+Search and the arbitrary-SQL REPL still copy the complete agent store in bounded
+pages, preserving existing FTS5 ranking and cross-session SQL behavior. Their
+transfer and indexing cost remains proportional to history size. A REPL or
+search call always refreshes its complete view, even after a bounded lookup;
+there is no stale-cache fallback. REPL scratch tables remain in the workspace's
+local `.scroll` directory; they are not yet stored in PG. Legacy JSON-to-SQLite
+history import is skipped on PG startup; switching backends does not implicitly
+import old data.
+
+Chat metadata, Hub, audit, providers and token usage have not yet been connected
+to SQL repositories. Leases and migration primitives exist, but application
+migration/activation and multi-instance coordination are not connected. This is
 an integration under development, not a complete application storage switch.
 
 ## Configure a development deployment

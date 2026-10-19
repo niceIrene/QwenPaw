@@ -20,7 +20,6 @@ from typing import (
     AsyncGenerator,
     Callable,
     Iterable,
-    Optional,
 )
 
 from ...config.timezone import normalize_tz
@@ -42,6 +41,7 @@ from .service_factories import (
 from .local_workspace import QwenPawLocalWorkspace
 from ..task_tracker import TaskTracker
 from ..chats.session import SafeJSONSession
+from ..chats.database_session import DatabaseSession
 from ..crons.manager import CronManager
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
@@ -193,7 +193,7 @@ class Workspace:
 
     # Service access via properties (delegates to ServiceManager)
     @property
-    def session(self) -> Optional[SafeJSONSession]:
+    def session(self) -> SafeJSONSession | DatabaseSession | None:
         """Get session instance from ServiceManager."""
         return self._service_manager.services.get("session")
 
