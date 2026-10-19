@@ -291,6 +291,18 @@ async def fork_agent(
     """
     _enforce_localhost(request)
 
+    from ...config.utils import load_config
+    from ...utils.io_utils import run_sync_io
+
+    if (await run_sync_io(load_config)).storage.backend == "postgresql":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Forking PostgreSQL sessions is not supported yet. "
+                "Start a subagent without inheriting the parent session."
+            ),
+        )
+
     project_dir = _get_project_dir(req.agent_id)
     sessions_dir = _get_sessions_dir(req.agent_id)
 

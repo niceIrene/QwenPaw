@@ -44,7 +44,9 @@ class CheckpointQueryGateHook(LifecycleHook):
 
     async def run(self, ctx: HookContext) -> HookResult:
         try:
-            if ctx.workspace is not None:
+            if ctx.workspace is not None and RUNTIME.supports_workspace(
+                ctx.workspace,
+            ):
                 engine = await RUNTIME.get_for_workspace_async(ctx.workspace)
                 await engine.query_gate.wait()
         except Exception:

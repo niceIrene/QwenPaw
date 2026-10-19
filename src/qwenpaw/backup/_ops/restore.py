@@ -42,6 +42,7 @@ from .restore_helpers import (
     resolve_workspace_dst,
     rewrite_agent_workspace_dir,
 )
+from .database_checks import check_restore_database
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ def preflight_restore(backup_id: str, req: RestoreBackupRequest) -> BackupMeta:
             operation="Restoring",
         )
         _validate_version(meta)
+        check_restore_database(zf, req, load_config())
         return meta
 
 
@@ -537,6 +539,7 @@ def _restore_sync_locked(
             operation="Restoring",
         )
         _validate_version(meta)
+        check_restore_database(zf, req, load_config())
 
     if signature_action == "sign_trusted":
         meta = sign_trusted_backup(zp, meta)

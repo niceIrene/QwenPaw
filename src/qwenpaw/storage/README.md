@@ -36,10 +36,29 @@ local `.scroll` directory; they are not yet stored in PG. Legacy JSON-to-SQLite
 history import is skipped on PG startup; switching backends does not implicitly
 import old data.
 
-Chat metadata, Hub, audit, providers and token usage have not yet been connected
+Chat metadata, cron definitions/history, Hub, audit, providers and token usage have not yet been connected
 to SQL repositories. Leases and migration primitives exist, but application
 migration/activation and multi-instance coordination are not connected. This is
 an integration under development, not a complete application storage switch.
+
+This first contribution intentionally preserves the original lease and migration
+framework. It does not wire those prototypes into live requests or remove them.
+Use one application instance and a separate development namespace; online
+migration, shared-worker coordination and existing-installation rollout are
+outside this phase.
+
+File-only operations cannot transfer PG sessions. Workspace ZIP upload/download,
+workspace ZIP backup/restore and changes to PG storage through ZIP restore are
+rejected before mutation. Configuration/secrets/skills-only backups remain
+available within their existing constraints. Forking a subagent with inherited
+session state and Shadow Git conversation checkpoints are also unavailable in
+PG mode; automatic Shadow Git snapshots are skipped. Normal PG session saves
+are independent of Shadow Git and remain enabled. Back up the database and
+matching workspace files while all workers are stopped.
+
+Agent configuration/skill/job copying keeps its existing local-file semantics
+in this phase: chats and cron have not moved to PG. Do not use these file copies
+as backups of session state or history.
 
 ## Configure a development deployment
 

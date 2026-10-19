@@ -2193,6 +2193,20 @@ def _validate_and_extract_zip(data: bytes, workspace_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _require_file_workspace_archive() -> None:
+    config = await run_sync_io(load_config)
+    if config.storage.backend == "postgresql":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Workspace ZIP upload/download cannot include PostgreSQL "
+                "state. Back up the database and matching workspace files "
+                "while workers are stopped. Individual workspace files "
+                "can still be uploaded or downloaded."
+            ),
+        )
+
+
 @router.get(
     "/download",
     summary="Download workspace as zip",
@@ -2210,6 +2224,7 @@ def _validate_and_extract_zip(data: bytes, workspace_dir: Path) -> None:
 async def download_workspace(request: Request):
     """Stream agent workspace as a zip file."""
 
+    await _require_file_workspace_archive()
     agent = await get_agent_for_request(request)
     workspace_dir = agent.workspace_dir
 
@@ -2256,6 +2271,7 @@ async def upload_workspace(
     Merge uploaded zip contents into agent workspace (overwrite, not clear).
     """
 
+    await _require_file_workspace_archive()
     if file.content_type and file.content_type not in (
         "application/zip",
         "application/x-zip-compressed",
