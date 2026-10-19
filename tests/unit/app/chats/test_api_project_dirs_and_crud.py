@@ -386,6 +386,7 @@ async def test_set_project_dir_route_expands_user_home(
 ) -> None:
     """``~`` in the submitted path is resolved before it is stored."""
     monkeypatch.setenv("HOME", str(dirs.tmp))
+    monkeypatch.setenv("USERPROFILE", str(dirs.tmp))
     stored = _spec(meta=_meta_dirs((str(dirs.outer), None)))
     mgr = _mgr(set_session_project_dirs=AsyncMock(return_value=stored))
     await chats_api.set_chat_project_dir(

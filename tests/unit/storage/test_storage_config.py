@@ -34,6 +34,6 @@ def test_postgres_config_survives_save_and_reload(tmp_path, monkeypatch):
     restored = load_config(path)
     assert restored.storage == config.storage
     assert Config.model_validate(config.model_dump()).storage == config.storage
-    payload = path.read_text()
+    payload = path.read_text(encoding="utf-8")
     assert "postgresql://user:secret@localhost/db" not in payload
     assert json.loads(payload)["storage"]["postgresql"]["schema"] == "custom"
