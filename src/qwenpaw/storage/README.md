@@ -3,6 +3,33 @@
 SQLite remains the default backend. Existing installations retain their local
 SQLite history and JSON session files unless they select PostgreSQL explicitly.
 
+## First contribution: review guide
+
+This branch is a deliberately limited follow-up to PR #7954, based on its
+original head. It enables PG **sessions and scroll history in a development
+deployment**, not a complete application storage migration. The original
+migration service, leases, metadata schema and their tests remain intact.
+
+Review the commits in this order:
+
+1. Settings and session repository: explicit identities, revision checks and
+   atomic checkpoint-plus-history repository writes.
+2. Runtime selection: default local behavior, explicit `storage init/check`,
+   session pool ownership and failure propagation from hooks.
+3. Scroll integration: await history before checkpoint pointers, close native
+   async handles, and construct consistent disposable recall views.
+4. File-only operation guards: reject incomplete ZIP transfers, inherited
+   session forks and Shadow Git conversation checkpoints before mutation.
+5. Invalid session payload handling: malformed or unserializable state raises
+   a storage failure instead of being ignored by the session hooks.
+6. Shutdown ordering: drain cron callbacks before releasing session storage,
+   even though cron definitions themselves remain local in this phase.
+
+Chat/cron/usage SQL repositories, offline application imports, SQL backup/restore
+commands and removal of prototype orchestration belong in separate follow-ups.
+This split intentionally does not ask the original author to accept those
+architectural choices together with runtime integration.
+
 ## Current runtime coverage
 
 PostgreSQL currently stores session snapshots through `DatabaseSession`. The
@@ -36,8 +63,9 @@ local `.scroll` directory; they are not yet stored in PG. Legacy JSON-to-SQLite
 history import is skipped on PG startup; switching backends does not implicitly
 import old data.
 
-Chat metadata, cron definitions/history, Hub, audit, providers and token usage have not yet been connected
-to SQL repositories. Leases and migration primitives exist, but application
+Chat metadata, cron definitions/history, Hub, audit, providers and token usage
+have not yet been connected to SQL repositories. Leases and migration primitives
+exist, but application
 migration/activation and multi-instance coordination are not connected. This is
 an integration under development, not a complete application storage switch.
 
@@ -119,3 +147,14 @@ test schemas and removes them after testing:
 pytest tests/unit/storage tests/unit/app/chats tests/unit/app/workspace \
   tests/unit/agents/hooks/test_session_hook.py
 ```
+
+The regression suites also cover file guards, checkpoint behavior, cron shutdown
+and the default SQLite runtime. They do not establish external-model, browser,
+Windows/Linux or multi-instance compatibility. Full-history search/REPL cost and
+per-workspace pool sizing still need workload-specific evaluation before rollout.
+
+Review validation (macOS, Python 3.11, PostgreSQL 15): 1536 related tests passed,
+2 skipped. This included the original migration/lease tests, session/history,
+runtime/scroll, workspace lifecycle, backup/checkpoint and affected route suites.
+Pre-commit passed across all changed Python files. Tests use isolated PostgreSQL
+schemas; no existing deployment data is migrated by this verification.
