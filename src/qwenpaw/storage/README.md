@@ -3,32 +3,18 @@
 SQLite remains the default backend. Existing installations retain their local
 SQLite history and JSON session files unless they select PostgreSQL explicitly.
 
-## First contribution: review guide
+## Review scope
 
-This branch is a deliberately limited follow-up to PR #7954, based on its
-original head. It enables PG **sessions and scroll history in a development
-deployment**, not a complete application storage migration. The original
-migration service, leases, metadata schema and their tests remain intact.
+This follow-up to PR #7954 connects the selected backend to sessions, scroll
+history, chat metadata, cron definitions/execution history and token usage.
+SQLite retains its existing JSON/SQLite runtime format by default. PostgreSQL
+uses SQL repositories for these core services. The original MigrationService,
+leases, metadata schema, write fences and regression tests remain intact.
 
-Review the commits in this order:
-
-1. Settings and session repository: explicit identities, revision checks and
-   atomic checkpoint-plus-history repository writes.
-2. Runtime selection: default local behavior, explicit `storage init/check`,
-   session pool ownership and failure propagation from hooks.
-3. Scroll integration: await history before checkpoint pointers, close native
-   async handles, and construct consistent disposable recall views.
-4. File-only operation guards: reject incomplete ZIP transfers, inherited
-   session forks and Shadow Git conversation checkpoints before mutation.
-5. Invalid session payload handling: malformed or unserializable state raises
-   a storage failure instead of being ignored by the session hooks.
-6. Shutdown ordering: drain cron callbacks before releasing session storage,
-   even though cron definitions themselves remain local in this phase.
-
-Chat/cron/usage SQL repositories, offline application imports, SQL backup/restore
-commands and removal of prototype orchestration belong in separate follow-ups.
-This split intentionally does not ask the original author to accept those
-architectural choices together with runtime integration.
+Review the commits in groups: session/history runtime and operation guards;
+chat/cron/usage repositories and lifecycle; explicit offline imports; complete
+SQL backup/restore; platform validation and this operating procedure. No live
+backend switch or automatic restart activation is introduced.
 
 ## Current runtime coverage
 
@@ -63,17 +49,20 @@ local `.scroll` directory; they are not yet stored in PG. Legacy JSON-to-SQLite
 history import is skipped on PG startup; switching backends does not implicitly
 import old data.
 
-Chat metadata, cron definitions/history, Hub, audit, providers and token usage
-have not yet been connected to SQL repositories. Leases and migration primitives
-exist, but application
-migration/activation and multi-instance coordination are not connected. This is
-an integration under development, not a complete application storage switch.
+Chat metadata, cron definitions/history and usage now use the selected backend.
+Cron callbacks drain before their dependencies close; session and history pools
+are closed during shutdown. Stale revisions raise conflicts and database errors
+propagate without silently falling back to local files. Buffered usage is durable
+only after a successful flush; abrupt process termination can lose pending usage.
 
-This first contribution intentionally preserves the original lease and migration
-framework. It does not wire those prototypes into live requests or remove them.
-Use one application instance and a separate development namespace; online
-migration, shared-worker coordination and existing-installation rollout are
-outside this phase.
+Use one application process for each deployment namespace. It can host multiple
+agents and sessions; this restriction concerns application workers, not agent
+count. Existing lease primitives are not enforced throughout live operations,
+so multiple replicas/workers are not supported. The preserved metadata write
+fence serializes writes and is not a throughput improvement claim.
+
+Hub, audit, providers, local memory, REPL scratch tables and workspace assets
+remain file-backed and must be included in a matching filesystem backup.
 
 File-only operations cannot transfer PG sessions. Workspace ZIP upload/download,
 workspace ZIP backup/restore and changes to PG storage through ZIP restore are
@@ -84,11 +73,11 @@ PG mode; automatic Shadow Git snapshots are skipped. Normal PG session saves
 are independent of Shadow Git and remain enabled. Back up the database and
 matching workspace files while all workers are stopped.
 
-Agent configuration/skill/job copying keeps its existing local-file semantics
-in this phase: chats and cron have not moved to PG. Do not use these file copies
-as backups of session state or history.
+Copying jobs between agents is rejected in PG mode because file copying cannot
+preserve SQL cron state. Configuration and skill copying retains local-file
+semantics and is not a database backup.
 
-## Configure a development deployment
+## Configure PostgreSQL
 
 Merge the following into the root `config.json`:
 
@@ -133,28 +122,151 @@ With `backend: sqlite`, these CLI commands address the **new SQL schema** at
 their original locations. Neither command migrates or activates that schema for
 the legacy runtime.
 
-Changing the backend does not migrate existing data. Until application migration
-and activation are connected, use a separate development deployment for PG
-testing; legacy JSON sessions are not automatically read by the PG session store.
+## Offline import and manual cutover
 
-## Verification
+Changing the backend does not migrate data. Do not edit the active configuration
+until every required import and verification succeeds.
 
-The storage suite runs against SQLite and, when
-`QWENPAW_TEST_POSTGRES_DSN` is set, a real PostgreSQL server. It creates isolated
-test schemas and removes them after testing:
+1. Stop all application processes, schedulers and workers. Keep the source
+   stopped for the entire operation. Save the original configuration and take a
+   filesystem backup of the working directory **and external workspace paths**,
+   including sessions, history, chats, jobs, job history, usage, assets, local
+   memory, provider settings and secrets. Record paths and application revision.
+2. Prepare a separate `candidate.json` with the PG settings above and a stable
+   deployment ID. Use an empty, isolated PostgreSQL schema. Set the DSN environment
+   variable in the operator shell. Initialize using the candidate configuration:
+
+   ```sh
+   qwenpaw storage --config candidate.json init
+   ```
+
+3. Prepare one workspace manifest per agent. Paths are relative to the manifest;
+   use actual source paths. Both `workspace_id` and `agent_id` must equal the
+   runtime agent ID. Enumerate every session explicitly; the importer does not
+   discover files or guess identities from names. For example:
+
+   ```json
+   {
+     "workspace_id": "agent-id",
+     "agent_id": "agent-id",
+     "history": "source/history.db",
+     "chats": "source/chats.json",
+     "sessions": [
+       {
+         "session_id": "session-id",
+         "user_id": "user-id",
+         "channel": "console",
+         "path": "source/sessions/session.json"
+       }
+     ]
+   }
+   ```
+
+   `history` may be omitted if no history exists; omit a session's `path` only
+   when there is no saved checkpoint. Chat references and history mappings are
+   validated; ambiguous identities are rejected. Compare the manifest against
+   the complete source inventory, including sessions absent from the chat list.
+
+   ```sh
+   qwenpaw storage --config candidate.json import-workspace workspace.json --offline
+   ```
+
+4. Import cron for each agent with a separate manifest:
+
+   ```json
+   {
+     "workspace_id": "agent-id",
+     "agent_id": "agent-id",
+     "jobs": "source/jobs.json",
+     "history": {"job-id": "source/job-history/job-id.json"}
+   }
+   ```
+
+   Enumerate all existing execution-history files. Import application-wide usage
+   once, using the actual legacy usage JSON path:
+
+   ```sh
+   qwenpaw storage --config candidate.json import-cron cron.json --offline
+   qwenpaw storage --config candidate.json import-usage source/usage.json --offline
+   qwenpaw storage --config candidate.json check
+   ```
+
+5. Compare import results and target counts with the source inventory. `check`
+   checks connectivity, ownership, schema status and row counts; it does **not**
+   prove the manifests include every source file or validate all business data.
+   Perform the backup/restore rehearsal below before enabling the candidate.
+6. Only after successful imports and verification, manually merge the candidate
+   storage settings into the active configuration, preserving other application
+   settings. Start one application process. Confirm old conversations/history,
+   chat lists, cron definitions/history and usage are visible before resuming
+   normal traffic. Do not start the old source instance alongside it.
+
+Each workspace or cron import is transactional; the complete deployment import
+is **not one transaction**. If a later command fails, previous successful imports
+remain in the candidate. Keep the original configuration active and the source
+files intact. Correct the failed import or restart with a new empty namespace;
+do not blindly rerun successful imports or clear an occupied namespace.
+
+Before new writes reach PG, rollback means restoring the original configuration
+and paired files. After PG accepts writes, returning to old SQLite files would
+lose those new writes: stop, back up PG and reconcile deliberately. Automatic
+reverse migration into the legacy runtime format is not implemented. The original
+MigrationService remains available as a storage primitive, but its activation
+is not connected to application configuration or live requests.
+
+## Paired backup and restore rehearsal
+
+Stop every application process before taking **both** snapshots. `--offline`
+is an operator assertion, not a mechanism that stops or locks out workers.
 
 ```sh
-pytest tests/unit/storage tests/unit/app/chats tests/unit/app/workspace \
-  tests/unit/agents/hooks/test_session_hook.py
+qwenpaw storage --config candidate.json backup storage.jsonl --offline
 ```
 
-The regression suites also cover file guards, checkpoint behavior, cron shutdown
-and the default SQLite runtime. They do not establish external-model, browser,
-Windows/Linux or multi-instance compatibility. Full-history search/REPL cost and
-per-workspace pool sizing still need workload-specific evaluation before rollout.
+Pair this SQL archive with a filesystem snapshot from the same maintenance
+window. The archive includes all eight schema tables: metadata, stores, history,
+checkpoints, records, usage, leases and migration jobs. It preserves identities,
+history high-water marks, checkpoint generations and revisions. Live leases
+block backup/restore; stopped workers' leases must expire first. The JSONL format
+is version 2; the earlier six-table prototype format is intentionally rejected.
+The archive contains sensitive application data and is not encrypted.
 
-Review validation (macOS, Python 3.11, PostgreSQL 15): 1536 related tests passed,
-2 skipped. This included the original migration/lease tests, session/history,
-runtime/scroll, workspace lifecycle, backup/checkpoint and affected route suites.
-Pre-commit passed across all changed Python files. Tests use isolated PostgreSQL
-schemas; no existing deployment data is migrated by this verification.
+Prepare `rehearsal.json` pointing to another empty schema, with the **same
+deployment ID**. Keep all
+workers stopped; do not connect an application to the rehearsal namespace.
+
+```sh
+qwenpaw storage --config rehearsal.json init
+qwenpaw storage --config rehearsal.json restore storage.jsonl --offline
+qwenpaw storage --config rehearsal.json check
+```
+
+Restore validates the archive digest, counts, identity and schema before committing
+its transaction. Any restore failure rolls back target writes; nonempty targets
+are refused. Backup refuses to overwrite an existing archive. Compare restored
+counts and identity with the candidate and retain both command outputs with the
+backup. Automated regressions compare restored rows and exercise actual runtime
+reopening; operators should also validate representative application data during
+the controlled cutover.
+
+For disaster recovery, restore the matching filesystem snapshot and SQL archive,
+restore the DSN secret separately, check deployment identity, and only then start
+one process. SQL restore alone does not recover local memory, attachments,
+configuration, secrets, scratch state or other file-backed services. Filesystem
+ZIP backup alone does not recover PG data.
+
+## Validation and remaining limits
+
+Tests use isolated PostgreSQL schemas; they do not migrate existing deployments.
+The platform workflow runs real PostgreSQL tests on Linux and default-local-path
+regressions on Windows. Multi-instance coordination, online switching, automatic
+legacy discovery, file-only fork/checkpoint support and performance qualification
+remain outside this version. Search/REPL cost grows with history size; size pools
+for the number of loaded workspaces.
+
+macOS validation (Python 3.11, PostgreSQL 15): 2043 passed, 9 skipped across
+the affected storage, runtime, workspace, route, checkpoint and doctor suites.
+
+Linux validation (Python 3.11, PostgreSQL 15, Linux aarch64 container): 952 passed,
+8 skipped across storage, chats, cron, usage, backup and session hooks. Windows
+must have a successful workflow run before Windows verification is claimed.

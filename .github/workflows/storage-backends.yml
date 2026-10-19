@@ -1,0 +1,70 @@
+name: Storage backend validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/pg-runtime-review-7954]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/storage-backends.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: qwenpaw
+          POSTGRES_PASSWORD: storage-test-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qwenpaw"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      QWENPAW_TEST_POSTGRES_DSN: postgresql://qwenpaw:storage-test-only@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install application and test dependencies
+        run: python -m pip install -e . pytest pytest-asyncio pytest-cov
+      - name: Exercise both backends and offline recovery
+        env:
+          QWENPAW_WORKING_DIR: ${{ runner.temp }}/qwenpaw-storage
+        run: >-
+          python -m pytest -q tests/unit/storage tests/unit/app/chats
+          tests/unit/app/crons tests/unit/token_usage tests/unit/backup
+          tests/unit/agents/hooks/test_session_hook.py
+
+  sqlite-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install application and test dependencies
+        run: python -m pip install -e . pytest pytest-asyncio pytest-cov
+      - name: Verify default local storage and session compatibility
+        env:
+          QWENPAW_WORKING_DIR: ${{ runner.temp }}/qwenpaw-storage
+        run: >-
+          python -m pytest -q tests/unit/app/chats tests/unit/token_usage
+          tests/unit/storage/test_storage_config.py
+          tests/unit/storage/test_database_session.py
+          tests/unit/storage/test_storage_sessions.py
+          tests/unit/agents/hooks/test_session_hook.py
+          -k "not postgresql"
