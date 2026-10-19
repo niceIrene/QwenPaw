@@ -14,5 +14,9 @@ class StorageMaintenanceError(StorageError):
     """Writes are fenced while the dataset is being migrated."""
 
 
-class MigrationConflictError(StorageError):
+class StorageConflictError(StorageError):
+    """A revision or unique identity conflicts with stored state."""
+
+
+class MigrationConflictError(StorageConflictError):
     """The target changed or replacement has not been confirmed."""

@@ -663,7 +663,7 @@ def run_doctor_checks(
                 click.style("OK", fg="green") + " — no hygiene warnings",
             )
 
-        click.echo("\n=== Cron (jobs.json) ===")
+        click.echo("\n=== Cron ===")
         cj_ok, cj_detail = check_cron_jobs_files(cfg)
         if cj_ok:
             click.echo(click.style("OK", fg="green") + f" — {cj_detail}")

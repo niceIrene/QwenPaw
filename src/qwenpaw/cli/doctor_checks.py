@@ -475,7 +475,16 @@ _DIALOG_MANY = 200
 
 
 def check_cron_jobs_files(cfg: Config) -> tuple[bool, str]:
-    """Validate each workspace ``jobs.json`` and optional legacy root file."""
+    """Validate cron definitions in the configured persistence backend."""
+    if cfg.storage.backend == "postgresql":
+        try:
+            return asyncio.run(_check_database_cron_jobs(cfg))
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Driver and validation errors can contain credentials or payloads.
+            return (
+                False,
+                f"PostgreSQL cron check failed ({type(exc).__name__})",
+            )
     problems: list[str] = []
     validated_paths: list[tuple[str, Path, int]] = []
 
@@ -515,6 +524,25 @@ def check_cron_jobs_files(cfg: Config) -> tuple[bool, str]:
         )
     summary = "; ".join(f"{aid}: {n} job(s)" for aid, _p, n in validated_paths)
     return True, f"{len(validated_paths)} file(s) OK — {summary}"
+
+
+async def _check_database_cron_jobs(cfg: Config) -> tuple[bool, str]:
+    """Read the same scoped registries as workspace startup, without writes."""
+    from ..app.crons.repo.database_repo import DatabaseJobRepository
+    from ..storage.factory import create_storage
+    from ..storage.models import StorageScope
+
+    summaries: list[str] = []
+    async with create_storage(cfg.storage, WORKING_DIR) as runtime:
+        records = runtime.records(cfg.storage.deployment_id)
+        for agent_id in cfg.agents.profiles:
+            repo = DatabaseJobRepository(
+                records,
+                StorageScope(cfg.storage.deployment_id, agent_id, agent_id),
+            )
+            jobs = await repo.load()
+            summaries.append(f"{agent_id}: {len(jobs.jobs)} job(s)")
+    return True, "PostgreSQL — " + ("; ".join(summaries) or "no agents")
 
 
 def _ms_playwright_browser_cache_roots() -> list[Path]:

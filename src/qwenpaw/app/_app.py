@@ -417,12 +417,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     backup_manager = BackupManager()
 
-    # Start token usage manager background tasks
-    logger.debug("Starting TokenUsageManager background tasks...")
+    # Producers can enqueue before backend startup at the lifespan boundary.
     from ..token_usage import get_token_usage_manager
 
     token_usage_manager = get_token_usage_manager()
-    token_usage_manager.start(flush_interval=10)
 
     # Expose to endpoints (must be set before first request arrives).
     # WorkspaceRegistry IS-A MultiAgentManager — backward compat for
@@ -683,6 +681,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     daily_telemetry = start_daily_telemetry()
 
     try:
+        await token_usage_manager.start_configured(
+            load_config(get_config_path()).storage,
+            WORKING_DIR,
+        )
         yield
     finally:
         await daily_telemetry.close()

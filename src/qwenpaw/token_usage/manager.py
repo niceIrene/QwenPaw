@@ -11,7 +11,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from ..constant import WORKING_DIR, TOKEN_USAGE_FILE
+from ..storage.config import StorageBackend, StorageConfig
 from .buffer import TokenUsageBuffer, _UsageEvent
+from .database_buffer import DatabaseTokenUsageBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +104,10 @@ class TokenUsageManager:
 
     def __init__(self) -> None:
         path: Path = (WORKING_DIR / TOKEN_USAGE_FILE).expanduser()
-        self._buffer = TokenUsageBuffer(path)
+        self._buffer: TokenUsageBuffer | DatabaseTokenUsageBuffer = (
+            TokenUsageBuffer(path)
+        )
+        self._storage_context = None
         self._flush_interval = 10  # default
 
     def start(self, flush_interval: int = 10) -> None:
@@ -111,6 +116,8 @@ class TokenUsageManager:
         Must be called from an async context (e.g. app lifespan startup).
         ``flush_interval`` is the number of seconds between flushes.
         """
+        if isinstance(self._buffer, DatabaseTokenUsageBuffer):
+            raise RuntimeError("Use start_configured for database token usage")
         self._flush_interval = flush_interval
         # Recreate buffer with desired flush_interval if different from default
         if flush_interval != 10:
@@ -123,7 +130,51 @@ class TokenUsageManager:
 
     async def stop(self) -> None:
         """Stop the flush task and perform a final flush before exit."""
-        await self._buffer.stop()
+        try:
+            await self._buffer.stop()
+        finally:
+            context, self._storage_context = self._storage_context, None
+            if context is not None:
+                await context.__aexit__(None, None, None)
+
+    async def start_configured(
+        self,
+        config: StorageConfig,
+        root: Path,
+    ) -> None:
+        """Select app-wide usage storage before serving traffic."""
+        from ..storage.factory import create_storage
+        from ..storage.repositories.usage import UsageRepository
+
+        if self._storage_context is not None:
+            raise RuntimeError("Token usage storage is already open")
+        if config.backend == StorageBackend.SQLITE:
+            if isinstance(self._buffer, DatabaseTokenUsageBuffer):
+                self._buffer.take_pending_events()
+                self._buffer = TokenUsageBuffer(
+                    (WORKING_DIR / TOKEN_USAGE_FILE).expanduser(),
+                )
+            self.start()
+            return
+        context = create_storage(config, root)
+        runtime = await context.__aenter__()
+        try:
+            buffer = DatabaseTokenUsageBuffer(
+                UsageRepository(
+                    runtime.database,
+                    config.deployment_id,
+                    runtime.epoch,
+                ),
+                flush_interval=self._flush_interval,
+            )
+            for event in self._buffer.take_pending_events():
+                buffer.enqueue(event)
+            self._buffer = buffer
+            self._buffer.start()
+        except BaseException:
+            await context.__aexit__(None, None, None)
+            raise
+        self._storage_context = context
 
     def enqueue(self, event: _UsageEvent) -> None:
         """Synchronous fire-and-forget — enqueue a pre-built usage event.
@@ -272,7 +323,10 @@ class TokenUsageManager:
         if start_date is None:
             start_date = end_date - timedelta(days=30)
 
-        merged = await self._buffer.get_merged_data()
+        merged = await self._buffer.get_merged_data(
+            start_date.isoformat(),
+            end_date.isoformat(),
+        )
 
         records = await self._query(
             merged,
@@ -398,7 +452,10 @@ class TokenUsageManager:
         if start_date is None:
             start_date = end_date - timedelta(days=30)
 
-        merged = await self._buffer.get_merged_data()
+        merged = await self._buffer.get_merged_data(
+            start_date.isoformat(),
+            end_date.isoformat(),
+        )
 
         records = await self._query(
             merged,

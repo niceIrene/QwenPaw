@@ -46,6 +46,23 @@ async def create_session_service(
     return service
 
 
+def create_job_repository(ws: "Workspace"):
+    """Use the workspace's session runtime for cron persistence as well."""
+    from ..chats.database_session import DatabaseSession
+    from ..crons.repo.database_repo import DatabaseJobRepository
+    from ..crons.repo.json_repo import JsonJobRepository
+    from ...storage.errors import StorageError
+
+    if isinstance(ws.session, DatabaseSession):
+        if ws.session.runtime is None:
+            raise StorageError("Session storage is not open")
+        return DatabaseJobRepository(
+            ws.session.runtime.records(ws.session.scope.tenant_id),
+            ws.session.scope,
+        )
+    return JsonJobRepository(ws.workspace_dir / "jobs.json")
+
+
 async def create_driver_service(
     ws: "Workspace",
     _service,
@@ -164,6 +181,9 @@ async def create_chat_service(
     # pylint: disable=protected-access
     from ..chats.manager import ChatManager
     from ..chats.repo.json_repo import JsonChatRepository
+    from ..chats.repo.database_repo import DatabaseChatRepository
+    from ..chats.database_session import DatabaseSession
+    from ...storage.errors import StorageError
     from ...browser.runtime.links import link_for
     from ...browser.execution.kernel import get_default_kernel_manager
     from ...browser.tool_entrypoint import derive_workspace_id
@@ -174,18 +194,27 @@ async def create_chat_service(
             session_id,
         )
 
+    if isinstance(ws.session, DatabaseSession):
+        if ws.session.runtime is None:
+            raise StorageError("Session storage is not open")
+        chat_repo = DatabaseChatRepository(
+            ws.session.runtime.records(ws.session.scope.tenant_id),
+            ws.session.scope,
+        )
+    else:
+        chat_repo = JsonChatRepository(str(ws.workspace_dir / "chats.json"))
+
     if service is not None:
         cm = service
+        await cm.set_repository(chat_repo)
         logger.info(f"Reusing ChatManager for {ws.agent_id}")
     else:
-        chats_path = str(ws.workspace_dir / "chats.json")
-        chat_repo = JsonChatRepository(chats_path)
         cm = ChatManager(
             repo=chat_repo,
             on_session_closed=close_browser_session,
         )
         publish(cm)
-        logger.info(f"ChatManager created: {chats_path}")
+        logger.info(f"ChatManager created: {chat_repo.path}")
     cm.set_on_session_closed(close_browser_session)
 
     async def live_session_ids() -> set[str]:

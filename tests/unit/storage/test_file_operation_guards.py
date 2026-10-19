@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import HTTPException
 
-from qwenpaw.app.routers import fork, workspace
+from qwenpaw.app.routers import agents, fork, workspace
 from qwenpaw.app.chats.database_session import DatabaseSession
 from qwenpaw.checkpoints.models import CheckpointError
 from qwenpaw.checkpoints.runtime import CheckpointRuntime
@@ -46,6 +46,21 @@ async def test_pg_fork_rejected_before_reading_legacy_session(monkeypatch):
         await fork.fork_agent(SimpleNamespace(), None)
     assert caught.value.status_code == 409
     assert "Forking PostgreSQL sessions" in caught.value.detail
+    source.assert_not_called()
+
+
+async def test_pg_copy_jobs_rejected_before_creating_workspace(monkeypatch):
+    cfg = Config(storage={"backend": "postgresql", "deployment_id": "test"})
+    monkeypatch.setattr(agents, "load_config", lambda: cfg)
+    source = Mock()
+    monkeypatch.setattr(agents, "load_agent_config", source)
+    with pytest.raises(HTTPException) as caught:
+        await agents.copy_agent(
+            "source",
+            agents.CopyAgentRequest(copy_jobs=True),
+        )
+    assert caught.value.status_code == 409
+    assert "Disable copy_jobs" in caught.value.detail
     source.assert_not_called()
 
 
