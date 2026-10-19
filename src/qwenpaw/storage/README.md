@@ -65,8 +65,8 @@ Existing prototype databases keep their metadata columns and any old
 `leases`/`migration_jobs` tables; initialization never deletes them. New databases
 do not create those two tables. Inactive datasets are still rejected. Stop all
 workers before administrative database changes; running old migration code
-alongside this runtime is unsupported. This remains an integration under
-development, not a complete application storage switch.
+alongside this runtime is unsupported. Core business persistence can select
+PostgreSQL; this does not move every application file or database to PG.
 
 ## Configure a development deployment
 
@@ -215,8 +215,13 @@ Selecting PG is still a partial application storage switch:
   secrets/skills-only operations remain available. Application SQL backup/restore is
   available through `storage backup/restore` for the application SQL tables;
   pair it with a matching filesystem snapshot while all workers are stopped.
-- Workspace export/clone/import and doctor checks still contain filesystem
-  assumptions. A file export is not a backup of PG records.
+- Workspace ZIP upload/download is rejected in PG mode because it cannot
+  transfer database state. Use the offline SQL backup plus a matching file
+  snapshot. Individual workspace file operations remain available.
+- Agent configuration/skill copying remains available. Selecting `copy_jobs`
+  in PG mode is rejected before creating the destination; recreate those jobs
+  separately. Copying an agent never copies conversations or runtime state.
+- Doctor retains filesystem checks for local assets.
   Doctor's cron check reads PG job definitions when PostgreSQL is selected;
   it ignores legacy `jobs.json` files and reports database failures without
   falling back to local files. Other filesystem checks still apply to local

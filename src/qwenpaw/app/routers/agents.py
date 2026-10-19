@@ -1043,6 +1043,16 @@ async def copy_agent(
     """Copy selected agent config files into a newly created agent."""
     config = await run_sync_io(load_config)
 
+    if request.copy_jobs and config.storage.backend == "postgresql":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Copying PostgreSQL cron jobs between agents is unsupported. "
+                "Disable copy_jobs to copy configuration and skills, then "
+                "create the destination agent's jobs separately."
+            ),
+        )
+
     if agentId not in config.agents.profiles:
         raise HTTPException(
             status_code=404,
