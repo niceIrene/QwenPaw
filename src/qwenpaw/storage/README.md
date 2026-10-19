@@ -3,6 +3,26 @@
 SQLite remains the default backend. Existing installations retain their local
 SQLite history and JSON session files unless they select PostgreSQL explicitly.
 
+## Supported scope and rollout
+
+The supported scope is core business persistence for one application instance:
+sessions, scroll history, chat metadata, cron definitions/execution history and
+token usage. Backend selection, offline legacy import, SQL backup/restore and
+read-only cron diagnostics are implemented. The boundaries below are explicit
+exclusions, not requirements to migrate every store before using PG.
+
+For an existing installation, stop workers, retain a filesystem backup, initialize
+the PG namespace and run the applicable offline import commands below. Run
+`storage check`, then start one instance with the PG configuration. Changing the
+backend setting alone does not migrate data. Before returning to SQLite, stop
+workers again: local files do not contain changes made while running on PG.
+
+Regression coverage exercises both SQL drivers, the default local path,
+revision conflicts, failure/cancellation handling, imports and backup/restore.
+`test_core_workspace_restart.py` additionally creates services through the actual
+workspace factories and verifies session, chat and cron data after reopening PG.
+These checks do not invoke an external model or automate the browser UI.
+
 ## Current runtime coverage
 
 PostgreSQL currently stores session snapshots through `DatabaseSession`. The
