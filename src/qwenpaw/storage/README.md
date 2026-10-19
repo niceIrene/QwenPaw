@@ -241,6 +241,9 @@ Selecting PG is still a partial application storage switch:
 - Agent configuration/skill copying remains available. Selecting `copy_jobs`
   in PG mode is rejected before creating the destination; recreate those jobs
   separately. Copying an agent never copies conversations or runtime state.
+- Inherited-session subagent forks and Shadow Git conversation checkpoints are
+  rejected in PG mode because they only copy local session files. Automatic
+  Shadow Git snapshots are skipped; regular SQL session saves remain enabled.
 - Doctor retains filesystem checks for local assets.
   Doctor's cron check reads PG job definitions when PostgreSQL is selected;
   it ignores legacy `jobs.json` files and reports database failures without

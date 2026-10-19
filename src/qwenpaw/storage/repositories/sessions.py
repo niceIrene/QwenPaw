@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from ...agents.context.types import LogEntry
 from ..contracts.history import HistoryStore
+from ..errors import StorageError
 from .records import encode
 
 
@@ -40,10 +41,16 @@ class SessionRepository:
 
     async def load(self, key: SessionKey) -> SessionSnapshot | None:
         """Return a detached snapshot, or None when the session is absent."""
-        result = await self.history.load_checkpoint(key.encode())
+        encoded_key = key.encode()
+        try:
+            result = await self.history.load_checkpoint(encoded_key)
+        except (ValueError, TypeError) as exc:
+            raise StorageError("Invalid stored session payload") from exc
         if result is None:
             return None
         state, revision = result
+        if not isinstance(state, dict):
+            raise StorageError("Stored session payload must be an object")
         return SessionSnapshot(state, revision)
 
     async def save(
@@ -55,9 +62,13 @@ class SessionRepository:
         entries: Sequence[tuple[LogEntry, str | None]] = (),
     ) -> int:
         """Commit pending history with the checkpoint, or roll back both."""
-        return await self.history.save_checkpoint(
-            key.encode(),
-            state,
-            revision=revision,
-            entries=entries,
-        )
+        encoded_key = key.encode()
+        try:
+            return await self.history.save_checkpoint(
+                encoded_key,
+                state,
+                revision=revision,
+                entries=entries,
+            )
+        except (ValueError, TypeError) as exc:
+            raise StorageError("Session payload could not be saved") from exc

@@ -14,6 +14,7 @@ from ..utils.io_utils import run_sync_io
 from .policy import CheckpointPolicy, DEFAULT_AUTO_DEBOUNCE_SECONDS
 from .repository import CheckpointRepository
 from .service import CheckpointService
+from .models import CheckpointError
 from .policy import session_key
 
 logger = logging.getLogger("qwenpaw.checkpoints")
@@ -94,7 +95,25 @@ class CheckpointRuntime:
         self._last_auto_gc: dict[str, float] = {}
         self.debouncer = Debouncer()
 
+    @staticmethod
+    def supports_workspace(workspace: Any) -> bool:
+        """Shadow Git cannot snapshot or restore database session state."""
+        from ..app.chats.database_session import DatabaseSession
+
+        return not isinstance(
+            getattr(workspace, "session", None),
+            DatabaseSession,
+        )
+
+    def _require_supported_workspace(self, workspace: Any) -> None:
+        if not self.supports_workspace(workspace):
+            raise CheckpointError(
+                "Shadow Git checkpoints do not support PostgreSQL sessions. "
+                "Back up the database and workspace files while stopped.",
+            )
+
     def get_for_workspace(self, workspace: Any) -> CheckpointService:
+        self._require_supported_workspace(workspace)
         service = self.get_for_workspace_dir(workspace.workspace_dir)
         service.workspace = workspace
         return service
@@ -104,6 +123,7 @@ class CheckpointRuntime:
         workspace: Any,
     ) -> CheckpointService:
         """Return a service without blocking the event loop on first use."""
+        self._require_supported_workspace(workspace)
         service = await self.get_for_workspace_dir_async(
             workspace.workspace_dir,
         )
@@ -202,7 +222,7 @@ class CheckpointRuntime:
         channel: str,
         query_text: str | None = None,
     ) -> None:
-        if not session_id:
+        if not session_id or not self.supports_workspace(workspace):
             return
         service = await self.get_for_workspace_async(workspace)
         auto_enabled, debounce_seconds = await service.auto_settings()
@@ -276,6 +296,8 @@ class CheckpointRuntime:
         sessions: list[tuple[str, str, str]],
     ) -> tuple[str, ...]:
         """Quiesce auto snapshots, then remove session checkpoint state."""
+        if not self.supports_workspace(workspace):
+            return ()
         with self._lock:
             cached = next(
                 (

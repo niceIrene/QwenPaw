@@ -178,6 +178,11 @@ class CheckpointCommandHandler(BaseControlCommandHandler):
     )
 
     async def handle(self, context: ControlContext) -> str:
+        if not RUNTIME.supports_workspace(context.workspace):
+            return (
+                "Shadow Git checkpoints do not support PostgreSQL sessions. "
+                "Back up the database and workspace files while stopped."
+            )
         raw = context.args.get("_raw_args", "")
         subcommand, subargs = _split_subcommand(raw)
         handlers = {
