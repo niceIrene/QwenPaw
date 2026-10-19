@@ -4,7 +4,7 @@
 import pytest
 
 from qwenpaw.agents.context.types import LogEntry
-from qwenpaw.storage.errors import MigrationConflictError
+from qwenpaw.storage.errors import MigrationConflictError, StorageError
 from qwenpaw.storage.factory import create_storage
 from qwenpaw.storage.models import StorageScope
 from qwenpaw.storage.repositories.sessions import SessionKey
@@ -66,3 +66,33 @@ async def test_stale_session_save_rolls_back_pending_history(db):
             entries=[(LogEntry(kind="message", content="committed"), "event")],
         )
         assert await writer.history.count(key.encode()) == 1
+
+
+@pytest.mark.parametrize("payload", ["{broken", "[]"])
+async def test_invalid_session_payload_is_a_storage_failure(db, payload):
+    key = SessionKey("chat")
+    async with create_storage(db.config, db.root) as runtime:
+        sessions = await runtime.sessions(StorageScope("tenant", "ws", "a"))
+        await sessions.save(key, {"agent": {}}, revision=0)
+        async with db.transaction(write=True) as tx:
+            await tx.execute(
+                f"UPDATE {db.table('checkpoints')} SET payload={db.bind(1)} "
+                f"WHERE store_id={db.bind(2)} AND session_id={db.bind(3)}",
+                payload,
+                sessions.history.store_id,
+                key.encode(),
+            )
+        with pytest.raises(StorageError):
+            await sessions.load(key)
+
+
+async def test_unserializable_session_preserves_previous_revision(db):
+    key = SessionKey("chat")
+    async with create_storage(db.config, db.root) as runtime:
+        sessions = await runtime.sessions(StorageScope("tenant", "ws", "a"))
+        await sessions.save(key, {"agent": "saved"}, revision=0)
+        with pytest.raises(StorageError):
+            await sessions.save(key, {"agent": object()}, revision=1)
+        snapshot = await sessions.load(key)
+        assert snapshot.state == {"agent": "saved"}
+        assert snapshot.revision == 1
