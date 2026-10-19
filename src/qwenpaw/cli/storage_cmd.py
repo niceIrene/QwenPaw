@@ -10,6 +10,7 @@ import click
 from ..config.utils import load_config
 from ..constant import WORKING_DIR
 from ..storage.errors import StorageError
+from ..storage.backup import backup_storage, restore_storage
 from ..storage.factory import create_database
 from ..storage.factory import create_storage
 from ..storage.config import StorageBackend
@@ -167,3 +168,75 @@ def import_usage_command(
         raise click.ClickException("Stop all workers and pass --offline")
     count = _run_import(ctx, source, import_usage)
     click.echo(json.dumps({"days": count, "imported": True}))
+
+
+async def _backup_operation(config, root, path: Path, *, restore: bool):
+    if config.backend != StorageBackend.POSTGRESQL:
+        raise click.ClickException("These backup commands require PostgreSQL")
+    async with create_storage(config, root) as runtime:
+        if restore:
+            return await restore_storage(
+                runtime.database,
+                path,
+                epoch=runtime.epoch,
+            )
+        return await backup_storage(runtime.database, path)
+
+
+def _run_backup(ctx: click.Context, path: Path, *, restore: bool) -> None:
+    config, root = ctx.obj
+    try:
+        counts = asyncio.run(
+            _backup_operation(config, root, path, restore=restore),
+        )
+    except (StorageError, click.ClickException) as exc:
+        raise click.ClickException(str(exc)) from exc
+    except Exception as exc:
+        raise click.ClickException(
+            "Storage backup/restore failed; check the file and database "
+            f"connection ({type(exc).__name__}).",
+        ) from exc
+    click.echo(
+        json.dumps(
+            {"restored" if restore else "backed_up": True, "counts": counts},
+        ),
+    )
+
+
+@storage_group.command("backup")
+@click.argument("destination", type=click.Path(path_type=Path, dir_okay=False))
+@click.option(
+    "--offline",
+    is_flag=True,
+    required=True,
+    help="Confirm all application workers are stopped.",
+)
+@click.pass_context
+def backup_command(
+    ctx: click.Context,
+    destination: Path,
+    offline: bool,
+) -> None:
+    """Back up all application SQL tables; workspace files remain separate."""
+    if not offline:
+        raise click.ClickException("Stop all workers and pass --offline")
+    _run_backup(ctx, destination, restore=False)
+
+
+@storage_group.command("restore")
+@click.argument(
+    "source",
+    type=click.Path(exists=True, path_type=Path, dir_okay=False),
+)
+@click.option(
+    "--offline",
+    is_flag=True,
+    required=True,
+    help="Confirm all application workers are stopped.",
+)
+@click.pass_context
+def restore_command(ctx: click.Context, source: Path, offline: bool) -> None:
+    """Restore SQL data into empty storage of the same deployment."""
+    if not offline:
+        raise click.ClickException("Stop all workers and pass --offline")
+    _run_backup(ctx, source, restore=True)
