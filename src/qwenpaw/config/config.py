@@ -37,6 +37,7 @@ from qwenpaw.exceptions import (
 )
 
 from .timezone import detect_system_timezone
+from ..storage.config import StorageConfig
 from ..constant import (
     HEARTBEAT_DEFAULT_EVERY,
     HEARTBEAT_DEFAULT_TARGET,
@@ -3242,6 +3243,7 @@ class ThemeConfig(BaseModel):
 class Config(BaseModel):
     """Root config (config.json)."""
 
+    storage: StorageConfig = Field(default_factory=StorageConfig)
     channels: ChannelConfig = ChannelConfig()
     mcp: MCPConfig = MCPConfig()
     tools: ToolsConfig = Field(default_factory=ToolsConfig)

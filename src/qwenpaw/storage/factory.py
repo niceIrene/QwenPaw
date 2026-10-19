@@ -10,8 +10,6 @@ from weakref import WeakSet
 
 from ..agents.context.scroll.history import HistoryStore as LegacyHistoryStore
 from .backends.sqlite.legacy_history import SQLiteHistoryStore
-from .backends.postgres.database import PostgresDatabase
-from .backends.sqlite.database import SQLiteDatabase
 from .config import StorageBackend, StorageConfig
 from .contracts.database import Database
 from .contracts.history import HistoryStore
@@ -20,16 +18,19 @@ from .models import StorageScope
 from .repositories.history import SqlHistoryStore
 from .repositories.leases import Leases
 from .repositories.records import Records
+from .repositories.sessions import SessionRepository
 from .schema import initialize, validate
 
 
 def create_database(config: StorageConfig, root: Path) -> Database:
     """Select transport without opening connections or creating data."""
-    drivers = {
-        StorageBackend.SQLITE: SQLiteDatabase,
-        StorageBackend.POSTGRESQL: PostgresDatabase,
-    }
-    return drivers[config.backend](config, root)
+    if config.backend == StorageBackend.POSTGRESQL:
+        from .backends.postgres.database import PostgresDatabase
+
+        return PostgresDatabase(config, root)
+    from .backends.sqlite.database import SQLiteDatabase
+
+    return SQLiteDatabase(config, root)
 
 
 class StorageRuntime:
@@ -64,6 +65,10 @@ class StorageRuntime:
         if not tenant_id:
             raise ValueError(f"Tenant ID must not be empty")
         return Records(self.database, tenant_id, self.epoch)
+
+    async def sessions(self, scope: StorageScope) -> SessionRepository:
+        """Bind sessions and their history to the same store identity."""
+        return SessionRepository(await self.history(scope))
 
     def leases(self) -> Leases:
         """Create lease operations for the current activation epoch."""
