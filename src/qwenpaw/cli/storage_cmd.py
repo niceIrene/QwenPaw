@@ -86,12 +86,25 @@ async def _import_data(config, root, source: Path, importer):
     if config.backend != StorageBackend.POSTGRESQL:
         raise click.ClickException("Legacy import requires PostgreSQL")
     async with create_storage(config, root) as runtime:
-        return await importer(
+        options = {}
+        report = []
+        if importer is import_workspace:
+            options["reference_report"] = report
+        result = await importer(
             runtime.database,
             source,
             tenant_id=config.deployment_id,
             epoch=runtime.epoch,
+            **options,
         )
+        if importer is import_workspace:
+            return {
+                "store_id": result,
+                "imported": True,
+                "requires_review": any(r["requires_review"] for r in report),
+                "history_references": report,
+            }
+        return result
 
 
 @storage_group.command("import-workspace")
@@ -111,8 +124,8 @@ def import_workspace_command(
     """Import legacy sessions, history and chats into an unused PG scope."""
     if not offline:
         raise click.ClickException("Stop all workers and pass --offline")
-    store_id = _run_import(ctx, manifest, import_workspace)
-    click.echo(json.dumps({"store_id": store_id, "imported": True}))
+    result = _run_import(ctx, manifest, import_workspace)
+    click.echo(json.dumps(result))
 
 
 def _run_import(ctx: click.Context, source: Path, importer):

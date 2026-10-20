@@ -191,7 +191,19 @@ until every required import and verification succeeds.
    qwenpaw storage --config candidate.json check
    ```
 
-5. Compare import results and target counts with the source inventory. `check`
+5. Review the `history_references` report from `import-workspace`. Checkpoints
+   with scroll references require a history source. The report checks explicit
+   sequence endpoints within the mapped session and identifies missing rows
+   and persisted IDs without sequence mappings. It does not assume sequence
+   ranges are contiguous, nor validate every embedded textual recall reference.
+   `requires_review: true` means data was imported but reference completeness
+   is unresolved: do not activate until each gap is explained by verified source
+   retention or corrected by importing the complete source into a fresh scope.
+   The importer cannot infer whether a missing row was intentionally deleted.
+   Without an explicit report collector, the import API rejects unresolved
+   references instead of silently accepting them.
+
+   Compare import results and target counts with the source inventory. `check`
    checks connectivity, ownership, schema status and row counts; it does **not**
    prove the manifests include every source file or validate all business data.
    Perform the backup/restore rehearsal below before enabling the candidate.

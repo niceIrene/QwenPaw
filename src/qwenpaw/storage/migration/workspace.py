@@ -41,6 +41,7 @@ async def import_workspace(
     *,
     tenant_id: str,
     epoch: int,
+    reference_report: list[dict] | None = None,
 ) -> str:
     """Import declared files atomically into an unused workspace scope.
 
@@ -93,6 +94,7 @@ async def import_workspace(
             epoch=epoch,
             backup_directory=Path(directory),
             checkpoints=checkpoints,
+            reference_report=reference_report,
             history_sessions=history_sessions,
             chat_registry=chats.model_dump(mode="json"),
         )

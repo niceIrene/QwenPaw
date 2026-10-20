@@ -157,3 +157,47 @@ async def test_import_cli_requires_offline_and_uses_configured_scope(
         StorageScope(db.config.deployment_id, "agent", "agent"),
     )
     assert (await repo.load()).chats[0].session_id == "s"
+
+
+async def test_checkpoint_references_require_history_and_report_gaps(
+    db,
+    legacy_workspace,
+):
+    path, manifest = legacy_workspace
+    checkpoint = {
+        "agent": {
+            "scroll": {
+                "persisted_ids": ["present", "expired"],
+                "seq_by_id": {"present": [1, 1], "expired": [99, 99]},
+            },
+        },
+    }
+    (path.parent / "session.json").write_text(json.dumps(checkpoint))
+    manifest.pop("history")
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(StorageIdentityError, match="no history"):
+        await import_workspace(db, path, tenant_id="tenant", epoch=1)
+    async with db.transaction() as tx:
+        assert await tx.one(f"SELECT * FROM {db.table('stores')}") is None
+    manifest["history"] = "history.db"
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(StorageIdentityError, match="reference report"):
+        await import_workspace(db, path, tenant_id="tenant", epoch=1)
+    report = []
+    await import_workspace(
+        db,
+        path,
+        tenant_id="tenant",
+        epoch=1,
+        reference_report=report,
+    )
+    assert report == [
+        {
+            "session_key": SessionKey("s", "u", "c").encode(),
+            "checked_sequence_endpoints": 2,
+            "missing_sequences": [99],
+            "unmapped_message_ids": [],
+            "unmapped_tool_ids": [],
+            "requires_review": True,
+        },
+    ]

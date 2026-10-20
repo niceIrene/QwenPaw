@@ -15,6 +15,7 @@ from ..errors import StorageIdentityError, MigrationConflictError
 from ..repositories.history import COLUMNS
 from ..repositories.records import encode
 from ..schema import fence_write, identity
+from .references import check_references
 
 
 def snapshot_history(source: Path, destination: Path) -> None:
@@ -57,7 +58,7 @@ def _read_checkpoint(path: Path) -> dict:
     return value
 
 
-async def import_history(
+async def import_history(  # pylint: disable=too-many-branches
     db: Database,
     source: Path | None,
     *,
@@ -69,6 +70,7 @@ async def import_history(
     checkpoints: dict[str, Path] | None = None,
     history_sessions: dict[str, str] | None = None,
     chat_registry: dict | None = None,
+    reference_report: list[dict] | None = None,
 ) -> str:
     """Import a stopped legacy runtime as one atomic, identity-bound store.
 
@@ -164,6 +166,22 @@ async def import_history(
         )
         for session_id, path in (checkpoints or {}).items():
             payload = await asyncio.to_thread(_read_checkpoint, path)
+            coverage = await check_references(
+                db,
+                tx,
+                store_id,
+                session_id,
+                payload,
+                source is not None,
+            )
+            if coverage is not None:
+                if reference_report is not None:
+                    reference_report.append(coverage)
+                elif coverage["requires_review"]:
+                    raise StorageIdentityError(
+                        "Unresolved history references; a reference report "
+                        "is required for operator review",
+                    )
             await tx.execute(
                 f"INSERT INTO {db.table('checkpoints')} "
                 f"VALUES ({db.binds(3)}, 1, {db.bind(4)})",
