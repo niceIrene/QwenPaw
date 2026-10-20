@@ -682,7 +682,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     try:
         await token_usage_manager.start_configured(
-            load_config(get_config_path()).storage,
+            (await run_sync_io(load_config, get_config_path())).storage,
             WORKING_DIR,
         )
         yield

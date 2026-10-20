@@ -31,7 +31,7 @@ async def create_session_service(
     from ..chats.database_session import DatabaseSession
     from ..chats.session import SafeJSONSession
 
-    config = load_config().storage
+    config = (await run_sync_io(load_config)).storage
     if config.backend == StorageBackend.SQLITE:
         service = SafeJSONSession(save_dir=str(ws.workspace_dir / "sessions"))
         publish(service)

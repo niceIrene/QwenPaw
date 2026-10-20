@@ -80,3 +80,21 @@ async def test_core_workspace_services_reopen_same_pg_scope(
     assert not (tmp_path / "sessions").exists()
     assert not (tmp_path / "chats.json").exists()
     assert not (tmp_path / "jobs.json").exists()
+
+
+async def test_session_factory_reads_configuration_off_event_loop(
+    tmp_path,
+    monkeypatch,
+):
+    import threading
+
+    loop_thread = threading.get_ident()
+
+    def load():
+        assert threading.get_ident() != loop_thread
+        return Config()
+
+    monkeypatch.setattr("qwenpaw.config.utils.load_config", load)
+    ws = SimpleNamespace(agent_id="agent", workspace_dir=tmp_path)
+    session = await create_session_service(ws, None, lambda _: None)
+    assert session is not None
