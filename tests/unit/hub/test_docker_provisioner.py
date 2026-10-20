@@ -236,6 +236,8 @@ def test_container_launch_applies_persistence_security_and_limits(
             "QWENPAW_RUNTIME_INTERNAL_TOKEN": "runtime-token",
             "PYTHONPATH": "/",
             "OPENAI_API_KEY": "tenant-key",
+            "POSTGRES_DSN": "postgresql://runtime/database",
+            "QWENPAW_POSTGRES_DSN": "must-be-filtered",
         },
     )
 
@@ -254,6 +256,8 @@ def test_container_launch_applies_persistence_security_and_limits(
     assert environment["HOME"] == "/data/member"
     assert environment["QWENPAW_WORKING_DIR"] == "/data/member"
     assert environment["OPENAI_API_KEY"] == "tenant-key"
+    assert environment["POSTGRES_DSN"] == "postgresql://runtime/database"
+    assert "QWENPAW_POSTGRES_DSN" not in environment
     assert environment["QWENPAW_RUNTIME_INTERNAL_TOKEN"] == "runtime-token"
     volumes = launch["volumes"]
     assert isinstance(volumes, dict)

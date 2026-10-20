@@ -122,6 +122,44 @@ With `backend: sqlite`, these CLI commands address the **new SQL schema** at
 their original locations. Neither command migrates or activates that schema for
 the legacy runtime.
 
+## Hub-managed local and Docker runtimes
+
+The standalone default `QWENPAW_POSTGRES_DSN` is a protected environment name
+in Hub. Do not relax Hub's credential filtering or rely on exporting a DSN in
+the Hub host shell: managed local runtimes do not inherit arbitrary host
+variables, and both provisioners filter tenant credentials.
+
+For each stopped runtime:
+
+1. Choose a unique PostgreSQL schema and deployment ID for that runtime. Do not
+   point multiple Hub runtimes at the same namespace: multi-process writers are
+   not supported. Use database credentials restricted to the intended namespace.
+2. Set `storage.postgresql.dsn_env` to `POSTGRES_DSN` in that runtime's own
+   `config.json` (the configuration under its working directory, not the Hub
+   control-plane configuration). Keep credentials out of the JSON file.
+3. Store `POSTGRES_DSN` in the Hub credential vault using scope
+   `runtime:<runtime_id>`. The authenticated `PUT /api/hub/credentials` endpoint
+   accepts `{ "scope": "runtime:<runtime_id>", "name": "POSTGRES_DSN",
+   "value": "<connection URI>" }`. Runtime-specific values override tenant
+   defaults; prefer runtime scope to avoid sharing a database credential.
+4. Initialize/check the namespace explicitly before starting the runtime:
+   `qwenpaw storage --config /path/to/runtime/config.json init`, followed by
+   `check`, using the same application revision and an operator environment
+   containing `POSTGRES_DSN`. For existing data follow the offline import
+   procedure below before activating the PG settings. These commands do not
+   resolve Hub vault secrets themselves.
+5. Start the runtime through Hub. The provisioner receives the resolved vault
+   credential. A Docker DSN must be reachable from the managed container;
+   `localhost` inside the container refers to that container, not the Hub host.
+   Initialize from a network context that can reach the same database namespace.
+   macOS local runtimes use Seatbelt and deny arbitrary host-loopback ports;
+   a DSN pointing at `127.0.0.1` is therefore not supported by that policy.
+   Use an endpoint reachable under the existing sandbox policy. Do not weaken
+   isolation merely to make a host-local database reachable.
+6. Verify runtime readiness and persisted data, then stop/restart and check again.
+   Hub's own registry, vault, and other control-plane data remain local and must
+   be included in the paired filesystem backup.
+
 ## Offline import and manual cutover
 
 Changing the backend does not migrate data. Do not edit the active configuration

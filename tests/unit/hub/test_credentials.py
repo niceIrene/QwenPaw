@@ -281,3 +281,26 @@ def test_user_runtime_does_not_inherit_host_environment(tmp_path, monkeypatch):
     assert "VIRTUAL_ENV" not in result
     assert result["QWENPAW_RUNTIME_PROVISIONER"] == "local"
     assert not (record.working_dir / ".venv").exists()
+
+
+def test_pg_credential_survives_vault_and_local_runtime_boundary(
+    vault,
+    tmp_path,
+):
+    record = _record(tmp_path)
+    vault.put(
+        tenant_id=record.tenant_id,
+        scope=f"runtime:{record.runtime_id}",
+        name="POSTGRES_DSN",
+        value="postgresql://runtime/database",
+    )
+    resolved = vault.resolve_environment(
+        tenant_id=record.tenant_id,
+        runtime_id=record.runtime_id,
+    )
+    environment = LocalProcessRuntimeProvisioner.runtime_environment(
+        record,
+        resolved,
+    )
+    assert environment["POSTGRES_DSN"] == "postgresql://runtime/database"
+    assert "QWENPAW_POSTGRES_DSN" not in environment
