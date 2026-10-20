@@ -210,3 +210,55 @@ async def test_active_session_must_drain_before_migration(db, tmp_path):
         await leases.release(lease)
     finally:
         await target.close()
+
+
+@pytest.mark.parametrize("target_changed", [False, True])
+async def test_recover_source_only_freeze(db, tmp_path, target_changed):
+    from qwenpaw.storage.migration import service as migration
+
+    target = create_database(
+        StorageConfig(deployment_id="local"),
+        tmp_path / "target",
+    )
+    await target.open(create=True)
+    await initialize(target)
+    try:
+        service = MigrationService(db, target)
+        plan = await service.plan()
+        job_id = "interrupted-before-target-freeze"
+        payload = {
+            **plan,
+            "job_id": job_id,
+            "backup": str(tmp_path / "backup"),
+        }
+        # Reproduce the two committed writes before process death.
+        # pylint: disable=protected-access
+        await migration._save_job(db, job_id, "planned", payload)
+        await migration._transition(
+            db,
+            plan["source"]["identity"],
+            "frozen",
+            job_id,
+        )
+        if target_changed:
+            await Records(target, "tenant", 1).put("config", "new", {})
+            with pytest.raises(MigrationConflictError, match="Target changed"):
+                await service.recover(job_id, backup_root=tmp_path)
+            assert (await identity(db))["status"] == "frozen"
+        else:
+            assert await service.recover(job_id, backup_root=tmp_path) == {
+                "job_id": job_id,
+                "status": "aborted",
+            }
+            assert await identity(db) == plan["source"]["identity"]
+            assert await identity(target) == plan["target"]["identity"]
+            await Records(db, "tenant", 1).put("config", "after-recovery", {})
+            async with db.transaction() as tx:
+                row = await tx.one(
+                    f"SELECT phase FROM {db.table('migration_jobs')} "
+                    f"WHERE job_id={db.bind(1)}",
+                    job_id,
+                )
+                assert row["phase"] == "aborted"
+    finally:
+        await target.close()

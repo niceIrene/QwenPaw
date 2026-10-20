@@ -275,6 +275,64 @@ class MigrationService:
             )
         return destination[f"epoch"]
 
+    async def _abort_before_target_freeze(self, job_id: str, payload: dict):
+        """Recover the source-only freeze while locking both identities."""
+        source, target = self.source, self.target
+        async with target.transaction(write=True) as target_tx:
+            # A no-op update locks the same metadata row used by write fences,
+            # without changing the approved revision on either backend.
+            await target_tx.execute(
+                f"UPDATE {target.table('metadata')} SET revision=revision "
+                "WHERE singleton=1",
+            )
+            if (
+                await identity(target, target_tx)
+                != payload["target"]["identity"]
+            ):
+                raise MigrationConflictError("Target changed before recovery")
+            async with source.transaction(write=True) as source_tx:
+                await source_tx.execute(
+                    f"UPDATE {source.table('metadata')} SET revision=revision "
+                    "WHERE singleton=1",
+                )
+                expected = {
+                    **payload["source"]["identity"],
+                    "status": "frozen",
+                    "migration_id": job_id,
+                }
+                if await identity(source, source_tx) != expected:
+                    raise MigrationConflictError(
+                        "Source changed before recovery",
+                    )
+                journal = await source_tx.one(
+                    f"SELECT phase, payload "
+                    f"FROM {source.table('migration_jobs')} "
+                    f"WHERE job_id={source.bind(1)}",
+                    job_id,
+                )
+                if (
+                    journal is None
+                    or journal["phase"] != "planned"
+                    or json.loads(journal["payload"]) != payload
+                ):
+                    raise MigrationConflictError("Migration journal changed")
+                before = payload["source"]["identity"]
+                await source_tx.execute(
+                    f"UPDATE {source.table('metadata')} "
+                    f"SET status={source.bind(1)}, "
+                    f"migration_id={source.bind(2)} "
+                    "WHERE singleton=1",
+                    before["status"],
+                    before["migration_id"],
+                )
+                await source_tx.execute(
+                    f"UPDATE {source.table('migration_jobs')} "
+                    "SET phase='aborted' "
+                    f"WHERE job_id={source.bind(1)}",
+                    job_id,
+                )
+        return {"job_id": job_id, "status": "aborted"}
+
     async def recover(
         self,
         job_id: str,
@@ -288,19 +346,20 @@ class MigrationService:
             raise MigrationConflictError(
                 f"Source belongs to another migration",
             )
-        if destination[f"migration_id"] != job_id:
-            raise MigrationConflictError(
-                f"Target belongs to another migration",
-            )
         async with source.transaction() as tx:
             job = await tx.one(
-                f"SELECT payload FROM {source.table('migration_jobs')} "
+                f"SELECT phase, payload "
+                f"FROM {source.table('migration_jobs')} "
                 f"WHERE job_id={source.bind(1)}",
                 job_id,
             )
         if job is None:
             raise MigrationConflictError(f"Migration journal is missing")
         payload = json.loads(job[f"payload"])
+        if destination["migration_id"] != job_id:
+            if job["phase"] == "planned" and origin["status"] == "frozen":
+                return await self._abort_before_target_freeze(job_id, payload)
+            raise MigrationConflictError("Target belongs to another migration")
         if destination[f"status"] == f"active":
             if origin[f"status"] != f"retired":
                 raise StorageMaintenanceError(
