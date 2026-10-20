@@ -14,7 +14,7 @@ import logging
 from ..base import LifecycleHook
 from ..cron.cron_hook import restore_cron_context
 from ...agents.acp.meta import ACP_EPHEMERAL_META_KEY
-from ...runtime._state_utils import StateProxy
+from ...runtime._state_utils import StateProxy, prepare_session_state
 from ...runtime.console_turn_state import (
     prepare_console_regeneration,
     repair_invalid_history_images,
@@ -116,12 +116,7 @@ class SessionSaveHook(LifecycleHook):
 
             restore_cron_context(ctx)
             proxy = StateProxy()
-            prepare = getattr(ctx.agent, "prepare_session_state", None)
-            proxy.data = (
-                await prepare()
-                if callable(prepare)
-                else ctx.agent.state_dict()
-            )
+            proxy.data = await prepare_session_state(ctx.agent)
             stamp_console_turn(proxy.data, request, "completed")
             proxy.data["mode_state"] = ctx.mode_state
             await session.save_session_state(

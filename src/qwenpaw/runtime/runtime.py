@@ -236,37 +236,10 @@ class Runtime:
                 )
 
     async def _try_save_on_cancel(self, ctx: HookContext) -> None:
-        """Best-effort session save on cancellation.
+        """Drain history preparation and session saving before agent cleanup.
 
-        Before snapshotting, any partial streaming content accumulated in
-        the ``Envelope`` is injected into the agent's context so the
-        interrupted turn's text is not lost on reload.
-
-        ``state_dict()`` is called synchronously to snapshot the agent
-        state *before* any further event-loop iteration.  The I/O write
-        is wrapped in ``asyncio.shield`` so it completes even when the
-        outer task's ``_must_cancel`` flag triggers a re-cancellation on
-        the next ``await``.  In that case the shielded inner task still
-        runs to completion in the background; the ``proxy`` owns an
-        independent copy of the data so ``agent.close()`` in the
-        ``finally`` block cannot corrupt it.
-
-        .. note:: Why hardcoded instead of a hook?
-
-           This runs *outside* the ``try/except`` that wraps
-           ``hooks.run(Phase.ON_ERROR)``, so it executes even when
-           re-cancellation skips all ON_ERROR hooks.  The synchronous
-           parts (inject + restore + state_dict) complete before any ``await``,
-           and ``asyncio.shield`` protects the I/O — guarantees that a
-           generic hook framework cannot provide.
-
-        TODO: Session saving and cron history restoration have cancel-path
-         equivalents here. Other ``POST_RESPONSE`` and plugin hooks are
-         skipped on /stop.  A future improvement should unify the
-         cancel and normal paths — e.g. via a dedicated ``ON_CANCEL``
-         phase with per-hook shield execution — so plugins can
-         participate in the cancel lifecycle.  ``ctx._envelope`` should
-         also be promoted to a first-class ``HookContext`` field.
+        The protected operation must finish even if cancellation is requested
+        again, so agent.close() cannot race an outstanding history write.
         """
         request = getattr(ctx, "request", None)
         request_context = getattr(request, "request_context", None)
@@ -285,17 +258,19 @@ class Runtime:
         session = getattr(workspace, "session", None) if workspace else None
         if session is None:
             return
-        try:
+        from ..utils.io_utils import run_async_to_completion
+
+        async def persist():
             envelope = getattr(ctx, "_envelope", None)
             if envelope is not None:
                 self._inject_partial_response(agent, envelope)
 
             from ..hooks.cron.cron_hook import restore_cron_context
-            from ._state_utils import StateProxy
+            from ._state_utils import StateProxy, prepare_session_state
 
             restore_cron_context(ctx)
             proxy = StateProxy()
-            proxy.data = agent.state_dict()
+            proxy.data = await prepare_session_state(agent)
             request = ctx.request
             from .console_turn_state import REGENERATE_FROM, stamp_console_turn
 
@@ -319,26 +294,23 @@ class Runtime:
             )
             user_id = getattr(request, "user_id", "") or ctx.session_id
             channel = getattr(request, "channel", "") or ""
-            await asyncio.shield(
-                session.save_session_state(
-                    session_id=ctx.session_id,
-                    user_id=user_id,
-                    channel=channel,
-                    agent=proxy,
-                ),
+            await session.save_session_state(
+                session_id=ctx.session_id,
+                user_id=user_id,
+                channel=channel,
+                agent=proxy,
             )
-            logger.info(
-                "cancel-save: persisted interrupted turn (session=%s)",
-                ctx.session_id,
-            )
+
+        try:
+            await run_async_to_completion(persist())
         except asyncio.CancelledError:
             logger.info(
-                "cancel-save: outer await re-cancelled, inner save "
-                "continues in background (session=%s)",
+                "cancel-save: cleanup drained after re-cancellation "
+                "(session=%s)",
                 ctx.session_id,
             )
         except Exception:
-            logger.debug(
+            logger.warning(
                 "cancel-save: failed (session=%s)",
                 ctx.session_id,
                 exc_info=True,

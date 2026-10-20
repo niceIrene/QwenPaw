@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 
+async def prepare_session_state(agent) -> dict:
+    """Commit pending history before taking a session snapshot."""
+    prepare = getattr(agent, "prepare_session_state", None)
+    return await prepare() if callable(prepare) else agent.state_dict()
+
+
 class StateProxy:
     """Minimal proxy satisfying SafeJSONSession's state_module protocol.
 
