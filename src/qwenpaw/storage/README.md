@@ -280,6 +280,9 @@ history high-water marks, checkpoint generations and revisions. Live leases
 block backup/restore; stopped workers' leases must expire first. The JSONL format
 is version 2; the earlier six-table prototype format is intentionally rejected.
 The archive contains sensitive application data and is not encrypted.
+Archive publication uses a hard link to avoid overwriting an existing destination.
+Use a filesystem supporting hard links (such as APFS or NTFS); FAT/exFAT targets
+are not supported by this publication method.
 
 Prepare `rehearsal.json` pointing to another empty schema, with the **same
 deployment ID**. Keep all

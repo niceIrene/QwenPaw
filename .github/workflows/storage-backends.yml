@@ -2,6 +2,12 @@ name: Storage backend validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/storage-backends.yml'
   push:
     branches: [feat/pg-runtime-review-7954]
     paths:
@@ -68,3 +74,47 @@ jobs:
           tests/unit/storage/test_storage_sessions.py
           tests/unit/agents/hooks/test_session_hook.py
           -k "not postgresql"
+
+  postgres-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install application and tests
+        run: python -m pip install -e . pytest pytest-asyncio pytest-cov
+      - name: Start isolated PostgreSQL
+        shell: pwsh
+        run: |
+          $pgBin = Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\initdb.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1 |
+            ForEach-Object { Split-Path $_.FullName }
+          if (-not $pgBin) { throw 'PostgreSQL binaries are required for this job' }
+          "$pgBin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          $dataDir = Join-Path $env:RUNNER_TEMP 'storage-pg'
+          & "$pgBin\initdb.exe" -D $dataDir -U qwenpaw -A trust -E UTF8
+          if ($LASTEXITCODE -ne 0) { throw 'initdb failed' }
+          & "$pgBin\pg_ctl.exe" -D $dataDir -l "$dataDir.log" -o '-p 55439 -h 127.0.0.1' -w start
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL startup failed' }
+      - name: Verify PostgreSQL recovery and recall file lifecycle
+        env:
+          QWENPAW_WORKING_DIR: ${{ runner.temp }}/qwenpaw-storage
+          QWENPAW_TEST_POSTGRES_DSN: postgresql://qwenpaw@127.0.0.1:55439/postgres
+        run: >-
+          python -m pytest -q
+          tests/unit/storage/test_offline_recovery_drill.py
+          tests/unit/storage/test_async_scroll_persistence.py
+          tests/unit/storage/test_workspace_import.py
+          tests/unit/storage/test_storage_migration.py
+          tests/unit/storage/test_storage_business_backup.py
+          tests/unit/storage/test_recall_snapshot.py
+          tests/unit/storage/test_database_scroll_runtime.py
+      - name: Stop PostgreSQL
+        if: always()
+        shell: pwsh
+        run: |
+          if (Get-Command pg_ctl -ErrorAction SilentlyContinue) {
+            pg_ctl -D "$env:RUNNER_TEMP/storage-pg" -m fast -w stop
+          }
